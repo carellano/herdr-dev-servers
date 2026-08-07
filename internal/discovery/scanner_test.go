@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -9,11 +10,50 @@ import (
 type fakeRunner struct {
 	argv []string
 	out  []byte
+	err  error
 }
 
 func (f *fakeRunner) Run(_ context.Context, argv ...string) ([]byte, error) {
 	f.argv = append([]string(nil), argv...)
-	return f.out, nil
+	return f.out, f.err
+}
+
+func TestDarwinScannerTargetsOnlySuppliedPIDs(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		pids    []int
+		out     []byte
+		err     error
+		want    []Listener
+		wantErr bool
+	}{
+		{
+			name: "parses targeted listener with fixed argv",
+			pids: []int{42}, out: []byte("p42\x00nTCP 127.0.0.1:3000 (LISTEN)\x00"),
+			want: []Listener{{PID: 42, Address: "127.0.0.1", Port: 3000}},
+		},
+		{
+			name: "parses Darwin lsof field output without display decorations",
+			pids: []int{42}, out: []byte("p42\x00cpython\x00n127.0.0.1:3000\x00"),
+			want: []Listener{{PID: 42, Address: "127.0.0.1", Port: 3000}},
+		},
+		{name: "rejects malformed targeted output", pids: []int{42}, out: []byte("pnot-a-pid\x00"), wantErr: true},
+		{name: "propagates targeted lookup failure", pids: []int{42}, err: errors.New("lsof failed"), wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeRunner{out: tt.out, err: tt.err}
+			listeners, err := (DarwinScanner{Runner: runner}).ScanPIDs(context.Background(), tt.pids)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ScanPIDs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if want := []string{"lsof", "-nP", "-a", "-p", "42", "-iTCP", "-sTCP:LISTEN", "-F0pcn"}; !reflect.DeepEqual(runner.argv, want) {
+				t.Fatalf("argv = %#v, want %#v", runner.argv, want)
+			}
+			if !reflect.DeepEqual(listeners, tt.want) {
+				t.Fatalf("listeners = %#v, want %#v", listeners, tt.want)
+			}
+		})
+	}
 }
 
 func TestDarwinScannerUsesFixedArgvAndParsesListeners(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/carellano/herdr-apps/internal/daemon"
@@ -67,6 +68,65 @@ func TestDefaultSocketPrefersHerdrSocketOverride(t *testing.T) {
 	}
 }
 
+func TestFactoryRuntimeRecoversOnlyKnownPaneListenersAfterDarwinGlobalOmission(t *testing.T) {
+	topology := json.RawMessage(`{"workspaces":[{"workspace_id":"w","label":"Work"}],"tabs":[{"tab_id":"t","workspace_id":"w","label":"Tab"}],"panes":[{"pane_id":"p","tab_id":"t","workspace_id":"w","label":"Pane"}]}`)
+	for _, tt := range []struct {
+		name      string
+		global    []discovery.Listener
+		targeted  []discovery.Listener
+		targetErr error
+		wantPorts []int
+		wantPIDs  []int
+	}{
+		{
+			name:      "recovers omitted known foreground listener",
+			targeted:  []discovery.Listener{{PID: 6, Port: 3000, Address: "127.0.0.1"}},
+			wantPorts: []int{3000}, wantPIDs: []int{6},
+		},
+		{
+			name:      "deduplicates targeted result already in global scan",
+			global:    []discovery.Listener{{PID: 6, Port: 3000, Address: "127.0.0.1"}},
+			targeted:  []discovery.Listener{{PID: 6, Port: 3000, Address: "127.0.0.1"}, {PID: 6, Port: 4000, Address: "127.0.0.1"}},
+			wantPorts: []int{3000, 4000}, wantPIDs: []int{6},
+		},
+		{
+			name:      "keeps global result when targeted lookup fails",
+			global:    []discovery.Listener{{PID: 6, Port: 3000, Address: "127.0.0.1"}},
+			targetErr: errors.New("malformed targeted lsof output"),
+			wantPorts: []int{3000}, wantPIDs: []int{6},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scanner := &knownPaneScanner{global: tt.global, targeted: tt.targeted, targetErr: tt.targetErr}
+			factory := Factory{
+				Scanner: scanner, Processes: knownPaneProcesses{},
+				Snapshot: func(context.Context) (json.RawMessage, error) { return topology, nil },
+				ProcessInfo: func(context.Context, string) (herdr.ProcessInfoResponse, error) {
+					return herdr.ProcessInfoResponse{PaneID: "p", ShellPID: 4, ForegroundProcesses: []herdr.ProcessInfo{{PID: 6, Command: "node app.js", CWD: "/work"}}}, nil
+				},
+			}
+			service := &daemon.Service{}
+			snapshot, err := factory.Runtime(service).Rebuild(context.Background(), service.Snapshot())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(scanner.pids, tt.wantPIDs) {
+				t.Fatalf("targeted PIDs = %#v, want %#v", scanner.pids, tt.wantPIDs)
+			}
+			if len(snapshot.Applications) != 1 || snapshot.Applications[0].Association.Confidence != "high" {
+				t.Fatalf("applications = %#v", snapshot.Applications)
+			}
+			var ports []int
+			for _, endpoint := range snapshot.Applications[0].Endpoints {
+				ports = append(ports, endpoint.Port)
+			}
+			if !reflect.DeepEqual(ports, tt.wantPorts) {
+				t.Fatalf("ports = %#v, want %#v", ports, tt.wantPorts)
+			}
+		})
+	}
+}
+
 type emptyScanner struct{}
 
 func (emptyScanner) Scan(context.Context) ([]discovery.Listener, error) { return nil, nil }
@@ -75,4 +135,22 @@ type emptyProcesses struct{}
 
 func (emptyProcesses) Lookup(context.Context, int) (discovery.Process, error) {
 	return discovery.Process{}, nil
+}
+
+type knownPaneScanner struct {
+	global, targeted []discovery.Listener
+	targetErr        error
+	pids             []int
+}
+
+func (s *knownPaneScanner) Scan(context.Context) ([]discovery.Listener, error) { return s.global, nil }
+func (s *knownPaneScanner) ScanPIDs(_ context.Context, pids []int) ([]discovery.Listener, error) {
+	s.pids = append([]int(nil), pids...)
+	return s.targeted, s.targetErr
+}
+
+type knownPaneProcesses struct{}
+
+func (knownPaneProcesses) Lookup(_ context.Context, pid int) (discovery.Process, error) {
+	return discovery.Process{PID: pid, StartTime: "start", PGID: pid, Executable: "node", Args: []string{"node", "app.js"}, CWD: "/work"}, nil
 }

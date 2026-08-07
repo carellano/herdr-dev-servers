@@ -180,6 +180,11 @@ func (f Factory) Runtime(service *daemon.Service) daemon.Runtime {
 			return daemon.Reconcile(previous, daemon.ReconcileInput{HerdrErr: err, ObservedAt: time.Now().UTC()})
 		}
 		listeners, scanErr := f.Scanner.Scan(ctx)
+		if targeted, ok := f.Scanner.(discovery.PIDScanner); ok && scanErr == nil {
+			if recovered, err := targeted.ScanPIDs(ctx, foregroundPIDs(records)); err == nil {
+				listeners = mergeListeners(listeners, recovered)
+			}
+		}
 		processes := map[int]discovery.Process{}
 		var processErr error
 		for _, listener := range listeners {
@@ -194,4 +199,31 @@ func (f Factory) Runtime(service *daemon.Service) daemon.Runtime {
 	}, Publish: func(ctx context.Context, apps []model.Application) error {
 		return publisher.Publish(ctx, apps, f.Reporter)
 	}}
+}
+
+func foregroundPIDs(records []daemon.PaneProcess) []int {
+	var pids []int
+	for _, record := range records {
+		for _, process := range record.Foreground {
+			if process.PID > 0 {
+				pids = append(pids, process.PID)
+			}
+		}
+	}
+	return pids
+}
+
+func mergeListeners(global, targeted []discovery.Listener) []discovery.Listener {
+	merged := append([]discovery.Listener(nil), global...)
+	seen := make(map[discovery.Listener]struct{}, len(merged))
+	for _, listener := range merged {
+		seen[listener] = struct{}{}
+	}
+	for _, listener := range targeted {
+		if _, exists := seen[listener]; !exists {
+			merged = append(merged, listener)
+			seen[listener] = struct{}{}
+		}
+	}
+	return merged
 }

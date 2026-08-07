@@ -33,6 +33,12 @@ type Scanner interface {
 	Scan(context.Context) ([]Listener, error)
 }
 
+// PIDScanner can collect listeners for already-established process identities.
+// Callers must never supply arbitrary host PIDs.
+type PIDScanner interface {
+	ScanPIDs(context.Context, []int) ([]Listener, error)
+}
+
 // ProcessTable supplies typed process evidence to correlation.
 type ProcessTable interface {
 	Lookup(context.Context, int) (Process, error)
@@ -84,6 +90,34 @@ func (s DarwinScanner) Scan(ctx context.Context) ([]Listener, error) {
 	return ParseDarwinLsof(out)
 }
 
+// ScanPIDs collects listeners for the supplied process identities using fixed lsof argv.
+func (s DarwinScanner) ScanPIDs(ctx context.Context, pids []int) ([]Listener, error) {
+	if s.Runner == nil {
+		return nil, fmt.Errorf("Darwin scanner has no command runner")
+	}
+	seen := make(map[int]struct{}, len(pids))
+	var listeners []Listener
+	for _, pid := range pids {
+		if pid <= 0 {
+			continue
+		}
+		if _, exists := seen[pid]; exists {
+			continue
+		}
+		seen[pid] = struct{}{}
+		out, err := s.Runner.Run(ctx, "lsof", "-nP", "-a", "-p", strconv.Itoa(pid), "-iTCP", "-sTCP:LISTEN", "-F0pcn")
+		if err != nil {
+			return nil, fmt.Errorf("run lsof listener scan for PID %d: %w", pid, err)
+		}
+		parsed, err := ParseDarwinLsof(out)
+		if err != nil {
+			return nil, err
+		}
+		listeners = append(listeners, parsed...)
+	}
+	return listeners, nil
+}
+
 // ParseDarwinLsof parses only the lsof fields requested by DarwinScanner.
 func ParseDarwinLsof(data []byte) ([]Listener, error) {
 	var listeners []Listener
@@ -100,7 +134,7 @@ func ParseDarwinLsof(data []byte) ([]Listener, error) {
 			}
 			pid = value
 		case 'n':
-			if pid == 0 || !strings.Contains(raw, "(LISTEN)") {
+			if pid == 0 {
 				continue
 			}
 			name := strings.TrimSpace(strings.TrimSuffix(raw[1:], " (LISTEN)"))
