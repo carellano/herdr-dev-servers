@@ -17,6 +17,93 @@ import (
 
 type Paths struct{ StateDir, Socket, Lock string }
 
+// Runtime rebuilds complete reconciled snapshots around the persistent Herdr event stream.
+type Runtime struct {
+	Service   *Service
+	Subscribe func(context.Context) (<-chan struct{}, error)
+	Rebuild   func(context.Context, model.Snapshot) (model.Snapshot, error)
+	Publish   func(context.Context, []model.Application) error
+	Backoff   time.Duration
+	Retries   int
+}
+
+// RuntimeError identifies an exhausted reconnect loop while preserving the last complete Service snapshot.
+type RuntimeError struct{ Err error }
+
+func (e *RuntimeError) Error() string { return "Herdr runtime unavailable: " + e.Err.Error() }
+func (e *RuntimeError) Unwrap() error { return e.Err }
+
+// Run establishes baseline→subscribe→confirm, coalesces event bursts, and fully rebuilds after loss.
+func (r Runtime) Run(ctx context.Context) error {
+	if r.Service == nil || r.Subscribe == nil || r.Rebuild == nil {
+		return &RuntimeError{fmt.Errorf("runtime dependencies are incomplete")}
+	}
+	backoff := r.Backoff
+	if backoff <= 0 {
+		backoff = time.Second
+	}
+	retries := r.Retries
+	if retries < 1 {
+		retries = 3
+	}
+	for failures := 0; ; {
+		if _, err := r.Rebuild(ctx, r.Service.Snapshot()); err == nil {
+			events, err := r.Subscribe(ctx)
+			if err == nil {
+				if snapshot, err := r.Rebuild(ctx, r.Service.Snapshot()); err == nil {
+					published := r.Service.Replace(snapshot)
+					if r.Publish != nil {
+						if err := r.Publish(ctx, published.Applications); err != nil {
+							return err
+						}
+					}
+					failures = 0
+				eventsLoop:
+					for {
+						select {
+						case <-ctx.Done():
+							return nil
+						case _, ok := <-events:
+							if !ok {
+								break eventsLoop
+							}
+							for len(events) > 0 {
+								<-events
+							}
+							if snapshot, err := r.Rebuild(ctx, r.Service.Snapshot()); err == nil {
+								published := r.Service.Replace(snapshot)
+								if r.Publish != nil {
+									if err := r.Publish(ctx, published.Applications); err != nil {
+										return err
+									}
+								}
+							}
+						}
+					}
+					if ctx.Err() != nil {
+						return nil
+					}
+					select {
+					case <-ctx.Done():
+						return nil
+					case <-time.After(backoff):
+					}
+					continue
+				}
+			}
+		}
+		failures++
+		if failures >= retries {
+			return &RuntimeError{fmt.Errorf("reconnect failed after %d attempts", failures)}
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(backoff):
+		}
+	}
+}
+
 func StatePaths() (Paths, error) {
 	base := os.Getenv("HERDR_PLUGIN_STATE_DIR")
 	if base == "" {

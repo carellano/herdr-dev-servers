@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,62 @@ import (
 	"github.com/carellano/herdr-apps/internal/discovery"
 	"github.com/carellano/herdr-apps/internal/model"
 )
+
+func TestRuntimeCoalescesBurstsAndRebuildsAfterReconnect(t *testing.T) {
+	events := make(chan struct{}, 8)
+	follow := make(chan struct{})
+	rebuilds := 0
+	published := 0
+	subscribed := 0
+	runtime := Runtime{Service: &Service{}, Subscribe: func(context.Context) (<-chan struct{}, error) {
+		subscribed++
+		if subscribed == 1 {
+			return events, nil
+		}
+		return follow, nil
+	}, Rebuild: func(context.Context, model.Snapshot) (model.Snapshot, error) {
+		rebuilds++
+		return model.Snapshot{Applications: []model.Application{{ID: string(rune('a' + rebuilds))}}}, nil
+	}, Backoff: time.Millisecond, Retries: 1}
+	runtime.Publish = func(context.Context, []model.Application) error { published++; return nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runtime.Run(ctx) }()
+	for i := 0; i < 5; i++ {
+		events <- struct{}{}
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(events)
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if rebuilds < 3 || published < 2 || runtime.Service.Snapshot().Revision < 2 {
+		t.Fatalf("rebuilds=%d published=%d snapshot=%#v", rebuilds, published, runtime.Service.Snapshot())
+	}
+}
+
+func TestRuntimePreservesSnapshotAndBacksOffOnFailureAndCancellation(t *testing.T) {
+	service := &Service{}
+	service.Replace(model.Snapshot{Applications: []model.Application{{ID: "stable"}}})
+	attempts, rebuilds := 0, 0
+	runtime := Runtime{Service: service, Subscribe: func(context.Context) (<-chan struct{}, error) { attempts++; return nil, errors.New("offline") }, Rebuild: func(context.Context, model.Snapshot) (model.Snapshot, error) {
+		rebuilds++
+		return model.Snapshot{}, errors.New("scanner failed")
+	}, Backoff: 100 * time.Millisecond, Retries: 2}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runtime.Run(ctx) }()
+	time.Sleep(15 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 || rebuilds != 1 || service.Snapshot().Applications[0].ID != "stable" {
+		t.Fatalf("attempts=%d rebuilds=%d snapshot=%#v", attempts, rebuilds, service.Snapshot())
+	}
+}
 
 type runtimeScanner struct{}
 
