@@ -123,6 +123,7 @@ func ParseDarwinLsof(data []byte) ([]Listener, error) {
 	var listeners []Listener
 	pid := 0
 	for _, raw := range strings.Split(string(data), "\x00") {
+		raw = strings.TrimLeft(raw, "\r\n")
 		if len(raw) < 2 {
 			continue
 		}

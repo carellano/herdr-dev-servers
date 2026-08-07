@@ -72,6 +72,22 @@ func TestDarwinScannerUsesFixedArgvAndParsesListeners(t *testing.T) {
 	}
 }
 
+func TestParseDarwinLsofAssignsNewlineDelimitedRecordsToTheirPIDs(t *testing.T) {
+	data := []byte("p666\x00cnode\x00nTCP 127.0.0.1:3000 (LISTEN)\x00\np83195\x00\ncnode\x00\nnTCP 127.0.0.1:38186 (LISTEN)\x00\np83196\x00\ncnode\x00\nnTCP 127.0.0.1:38187 (LISTEN)\x00")
+
+	listeners, err := ParseDarwinLsof(data)
+	if err != nil {
+		t.Fatalf("ParseDarwinLsof() error = %v", err)
+	}
+	if want := []Listener{
+		{PID: 666, Port: 3000, Address: "127.0.0.1"},
+		{PID: 83195, Port: 38186, Address: "127.0.0.1"},
+		{PID: 83196, Port: 38187, Address: "127.0.0.1"},
+	}; !reflect.DeepEqual(listeners, want) {
+		t.Fatalf("listeners = %#v, want %#v", listeners, want)
+	}
+}
+
 func TestParseLinuxTCPListenersUsesDeterministicFixture(t *testing.T) {
 	fixture := "  0: 0100007F:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        42 12345 1 0000000000000000 100 0 0 10 0\n"
 	listeners, err := ParseLinuxTCPListeners([]byte(fixture), map[string]int{"12345": 77})
