@@ -12,12 +12,15 @@ import (
 
 // PaneEvidence is the relevant, conservative portion of Herdr pane process evidence.
 type PaneEvidence struct {
-	WorkspaceID string
-	TabID       string
-	PaneID      string
-	PID         int
-	CWD         string
-	ObservedAt  time.Time
+	WorkspaceID    string
+	WorkspaceLabel string
+	TabID          string
+	TabLabel       string
+	PaneID         string
+	PaneLabel      string
+	PID            int
+	CWD            string
+	ObservedAt     time.Time
 }
 
 // Input holds one complete discovery/correlation pass.
@@ -96,7 +99,7 @@ func associate(app *model.Application, process discovery.Process, panes []PaneEv
 	}
 	if len(matches) == 1 {
 		pane := matches[0]
-		app.Association = model.Association{WorkspaceID: pane.WorkspaceID, TabID: pane.TabID, PaneID: pane.PaneID, Confidence: model.ConfidenceHigh}
+		app.Association = model.Association{WorkspaceID: pane.WorkspaceID, WorkspaceLabel: pane.WorkspaceLabel, TabID: pane.TabID, TabLabel: pane.TabLabel, PaneID: pane.PaneID, PaneLabel: pane.PaneLabel, Confidence: model.ConfidenceHigh}
 		app.Evidence = append(app.Evidence, model.Evidence{Source: "herdr-pane", ObservedAt: pane.ObservedAt, Fresh: !pane.ObservedAt.IsZero()})
 		return
 	}

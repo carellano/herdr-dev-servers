@@ -1,7 +1,12 @@
 // Package model defines the daemon-owned, immutable application graph.
 package model
 
-import "time"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"time"
+)
 
 // Confidence describes how strongly the current evidence supports an association.
 type Confidence string
@@ -18,6 +23,11 @@ type Evidence struct {
 	ObservedAt  time.Time `json:"observedAt"`
 	Fresh       bool      `json:"fresh"`
 	Unavailable string    `json:"unavailable,omitempty"`
+	ShellPID    int       `json:"shellPid,omitempty"`
+	PGID        int       `json:"pgid,omitempty"`
+	Argv        []string  `json:"argv,omitempty"`
+	CWD         string    `json:"cwd,omitempty"`
+	Ancestry    []int     `json:"ancestry,omitempty"`
 }
 
 // ProcessIdentity distinguishes a process incarnation from a recycled PID.
@@ -36,11 +46,14 @@ type Endpoint struct {
 
 // Association is the evidence-backed Herdr location of an application.
 type Association struct {
-	WorkspaceID string     `json:"workspaceId,omitempty"`
-	TabID       string     `json:"tabId,omitempty"`
-	PaneID      string     `json:"paneId,omitempty"`
-	Confidence  Confidence `json:"confidence"`
-	Stale       bool       `json:"stale"`
+	WorkspaceID    string     `json:"workspaceId,omitempty"`
+	WorkspaceLabel string     `json:"workspaceLabel,omitempty"`
+	TabID          string     `json:"tabId,omitempty"`
+	TabLabel       string     `json:"tabLabel,omitempty"`
+	PaneID         string     `json:"paneId,omitempty"`
+	PaneLabel      string     `json:"paneLabel,omitempty"`
+	Confidence     Confidence `json:"confidence"`
+	Stale          bool       `json:"stale"`
 }
 
 // Application is one revisioned, daemon-owned listening application.
@@ -58,6 +71,29 @@ type Snapshot struct {
 	Revision     uint64        `json:"revision"`
 	Applications []Application `json:"applications"`
 	ObservedAt   time.Time     `json:"observedAt"`
+}
+
+// SemanticDigest excludes observation timestamps and revision so unchanged applications do not churn.
+func (s Snapshot) SemanticDigest() string {
+	s.Revision, s.ObservedAt = 0, time.Time{}
+	s.Applications = append([]Application(nil), s.Applications...)
+	for i := range s.Applications {
+		s.Applications[i].Endpoints = append([]Endpoint(nil), s.Applications[i].Endpoints...)
+		s.Applications[i].Evidence = append([]Evidence(nil), s.Applications[i].Evidence...)
+		for j := range s.Applications[i].Evidence {
+			s.Applications[i].Evidence[j].ObservedAt = time.Time{}
+			s.Applications[i].Evidence[j].Argv = append([]string(nil), s.Applications[i].Evidence[j].Argv...)
+			s.Applications[i].Evidence[j].Ancestry = append([]int(nil), s.Applications[i].Evidence[j].Ancestry...)
+		}
+	}
+	encoded, _ := json.Marshal(s)
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
+}
+
+// SemanticallyEqual reports whether snapshots differ only by sampling timestamps or revision.
+func (s Snapshot) SemanticallyEqual(other Snapshot) bool {
+	return s.SemanticDigest() == other.SemanticDigest()
 }
 
 // IPCRequest is the versioned request envelope used by plugin-local JSONL IPC.

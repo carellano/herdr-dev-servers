@@ -23,6 +23,9 @@ func (s *Service) Snapshot() model.Snapshot {
 func (s *Service) Replace(next model.Snapshot) model.Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.snapshot.SemanticallyEqual(next) {
+		return cloneSnapshot(s.snapshot)
+	}
 	next.Revision = s.snapshot.Revision + 1
 	s.snapshot = cloneSnapshot(next)
 	return cloneSnapshot(s.snapshot)
@@ -31,5 +34,14 @@ func (s *Service) Replace(next model.Snapshot) model.Snapshot {
 func cloneSnapshot(snapshot model.Snapshot) model.Snapshot {
 	copySnapshot := snapshot
 	copySnapshot.Applications = append([]model.Application(nil), snapshot.Applications...)
+	for i := range copySnapshot.Applications {
+		app := &copySnapshot.Applications[i]
+		app.Endpoints = append([]model.Endpoint(nil), app.Endpoints...)
+		app.Evidence = append([]model.Evidence(nil), app.Evidence...)
+		for j := range app.Evidence {
+			app.Evidence[j].Argv = append([]string(nil), app.Evidence[j].Argv...)
+			app.Evidence[j].Ancestry = append([]int(nil), app.Evidence[j].Ancestry...)
+		}
+	}
 	return copySnapshot
 }
