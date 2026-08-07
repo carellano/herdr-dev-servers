@@ -183,6 +183,48 @@ func Run(ctx context.Context, paths Paths, cfg config.Config, scanner discovery.
 	}
 }
 
+// Serve exposes the supplied daemon authority over its private IPC socket.
+func Serve(ctx context.Context, paths Paths, service *Service, inspector ProcessInspector) error {
+	if service == nil || inspector == nil {
+		return fmt.Errorf("daemon dependencies are incomplete")
+	}
+	lock, err := AcquireLock(paths.Lock, inspector)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	if err := os.MkdirAll(paths.StateDir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Remove(paths.Socket); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale daemon socket: %w", err)
+	}
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: paths.Socket, Net: "unix"})
+	if err != nil {
+		return fmt.Errorf("listen on daemon socket: %w", err)
+	}
+	defer func() { listener.Close(); os.Remove(paths.Socket) }()
+	if err := os.Chmod(paths.Socket, 0o600); err != nil {
+		return err
+	}
+	for {
+		listener.SetDeadline(time.Now().Add(100 * time.Millisecond))
+		conn, err := listener.AcceptUnix()
+		if err == nil {
+			go func() { defer conn.Close(); _ = service.ServeJSONL(conn, conn) }()
+			continue
+		}
+		if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+	}
+}
+
 type Client struct{ Socket string }
 
 func (c Client) Request(ctx context.Context, request model.IPCRequest) (model.IPCResponse, error) {

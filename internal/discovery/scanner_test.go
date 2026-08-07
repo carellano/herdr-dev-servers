@@ -44,16 +44,16 @@ func TestParseLinuxTCPListenersUsesDeterministicFixture(t *testing.T) {
 }
 
 func TestDarwinProcessTableUsesFixedArgv(t *testing.T) {
-	runner := &fakeRunner{out: []byte("42 1 42 /work/app /usr/bin/node node server.js\n")}
+	runner := &fakeRunner{out: []byte("42 1 42 /usr/bin/node node server.js\n")}
 	table := DarwinProcessTable{Runner: runner}
 	process, err := table.Lookup(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
 	}
-	if want := []string{"ps", "-o", "pid=,ppid=,pgid=,cwd=,comm=,args=", "-p", "42"}; !reflect.DeepEqual(runner.argv, want) {
+	if want := []string{"ps", "-o", "pid=,ppid=,pgid=,comm=,args=", "-p", "42"}; !reflect.DeepEqual(runner.argv, want) {
 		t.Fatalf("argv = %#v, want %#v", runner.argv, want)
 	}
-	if process.PID != 42 || process.ParentPID != 1 || process.CWD != "/work/app" || process.Executable != "/usr/bin/node" {
+	if process.PID != 42 || process.ParentPID != 1 || process.CWD != "" || process.Executable != "/usr/bin/node" {
 		t.Fatalf("process = %#v", process)
 	}
 }

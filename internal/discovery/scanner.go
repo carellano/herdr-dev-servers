@@ -55,12 +55,12 @@ func (t DarwinProcessTable) Lookup(ctx context.Context, pid int) (Process, error
 	if t.Runner == nil {
 		return Process{}, fmt.Errorf("Darwin process table has no command runner")
 	}
-	out, err := t.Runner.Run(ctx, "ps", "-o", "pid=,ppid=,pgid=,cwd=,comm=,args=", "-p", strconv.Itoa(pid))
+	out, err := t.Runner.Run(ctx, "ps", "-o", "pid=,ppid=,pgid=,comm=,args=", "-p", strconv.Itoa(pid))
 	if err != nil {
 		return Process{}, fmt.Errorf("read process %d: %w", pid, err)
 	}
 	fields := strings.Fields(strings.TrimSpace(string(out)))
-	if len(fields) < 6 {
+	if len(fields) < 5 {
 		return Process{}, fmt.Errorf("parse process %d: incomplete ps record", pid)
 	}
 	values := make([]int, 3)
@@ -70,7 +70,7 @@ func (t DarwinProcessTable) Lookup(ctx context.Context, pid int) (Process, error
 			return Process{}, fmt.Errorf("parse process %d: %w", pid, err)
 		}
 	}
-	return Process{PID: values[0], ParentPID: values[1], PGID: values[2], CWD: fields[3], Executable: fields[4], Args: fields[5:]}, nil
+	return Process{PID: values[0], ParentPID: values[1], PGID: values[2], Executable: fields[3], Args: fields[4:]}, nil
 }
 
 func (s DarwinScanner) Scan(ctx context.Context) ([]Listener, error) {

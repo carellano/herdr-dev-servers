@@ -126,7 +126,7 @@ func (p *Publisher) Publish(ctx context.Context, applications []model.Applicatio
 			continue
 		}
 		value := values[id]
-		if err := reporter.ReportMetadata(ctx, id, "herdr-apps", map[string]*string{"$ports": &value}); err != nil {
+		if err := reporter.ReportMetadata(ctx, id, "herdr-apps", map[string]*string{"ports": &value}); err != nil {
 			return &ReportError{WorkspaceID: id, Err: err}
 		}
 	}

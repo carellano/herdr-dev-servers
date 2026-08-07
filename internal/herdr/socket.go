@@ -175,8 +175,11 @@ func (t JSONLTransport) Snapshot(ctx context.Context, id string) (SnapshotRespon
 	return result, t.Call(ctx, id, "session.snapshot", map[string]any{}, &result)
 }
 func (t JSONLTransport) ProcessInfo(ctx context.Context, id, paneID string) (ProcessInfoResponse, error) {
-	var result ProcessInfoResponse
-	return result, t.Call(ctx, id, "pane.process_info", ProcessInfoRequest{PaneID: paneID}, &result)
+	var result struct {
+		ProcessInfo ProcessInfoResponse `json:"process_info"`
+	}
+	err := t.Call(ctx, id, "pane.process_info", ProcessInfoRequest{PaneID: paneID}, &result)
+	return result.ProcessInfo, err
 }
 func (t JSONLTransport) ReportMetadata(ctx context.Context, id string, metadata MetadataRequest) error {
 	return t.Call(ctx, id, "workspace.report_metadata", metadata, nil)

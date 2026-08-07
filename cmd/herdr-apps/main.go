@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/carellano/herdr-apps/internal/adapter"
 	"github.com/carellano/herdr-apps/internal/cli"
 	"github.com/carellano/herdr-apps/internal/config"
 	"github.com/carellano/herdr-apps/internal/daemon"
-	"github.com/carellano/herdr-apps/internal/discovery"
 	"github.com/carellano/herdr-apps/internal/model"
 	"github.com/carellano/herdr-apps/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,7 +52,17 @@ func run(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return daemon.Run(ctx, paths, cfg, discovery.NewSystemScanner(), discovery.NewSystemProcessTable(), daemon.NewSystemInspector())
+		_ = cfg
+		ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		service := &daemon.Service{}
+		runtime := adapter.NewFactory(adapter.DefaultSocket()).Runtime(service)
+		errs := make(chan error, 2)
+		go func() { errs <- daemon.Serve(ctx, paths, service, daemon.NewSystemInspector()) }()
+		go func() { errs <- runtime.Run(ctx) }()
+		err = <-errs
+		stop()
+		return err
 	}
 	if args[0] == "tui" {
 		paths, err := daemon.StatePaths()

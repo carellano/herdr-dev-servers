@@ -31,7 +31,7 @@ type ProcessInfoResponse struct {
 }
 type ProcessInfo struct {
 	PID     int    `json:"pid"`
-	Command string `json:"command,omitempty"`
+	Command string `json:"cmdline,omitempty"`
 	CWD     string `json:"cwd,omitempty"`
 }
 type Subscription struct {

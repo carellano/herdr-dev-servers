@@ -21,8 +21,8 @@ func (f *reporterFake) ReportMetadata(_ context.Context, workspace, _ string, to
 		return errors.New("stopped")
 	}
 	value := ""
-	if tokens["$ports"] != nil {
-		value = *tokens["$ports"]
+	if tokens["ports"] != nil {
+		value = *tokens["ports"]
 	}
 	f.calls = append(f.calls, reportCall{workspace, value})
 	return nil
@@ -58,6 +58,9 @@ func TestPublishWritesOnlyChangedWorkspacesAndClearsRemoved(t *testing.T) {
 	}
 	if len(reporter.calls) != 2 {
 		t.Fatalf("calls = %#v", reporter.calls)
+	}
+	if reporter.calls[0].value == "" || reporter.calls[1].value == "" {
+		t.Fatalf("ports token missing from calls = %#v", reporter.calls)
 	}
 	if err := publisher.Publish(context.Background(), apps, reporter); err != nil {
 		t.Fatal(err)
@@ -95,10 +98,10 @@ func TestHerdrReporterUsesMetadataTransport(t *testing.T) {
 	transport := &metadataTransportFake{}
 	value := "http://127.0.0.1:3000"
 	reporter := HerdrReporter{Transport: transport, RequestID: func() string { return "request" }}
-	if err := reporter.ReportMetadata(context.Background(), "workspace", "herdr-apps", map[string]*string{"$ports": &value}); err != nil {
+	if err := reporter.ReportMetadata(context.Background(), "workspace", "herdr-apps", map[string]*string{"ports": &value}); err != nil {
 		t.Fatal(err)
 	}
-	if transport.id != "request" || transport.metadata.WorkspaceID != "workspace" || transport.metadata.Tokens["$ports"] != &value {
+	if transport.id != "request" || transport.metadata.WorkspaceID != "workspace" || transport.metadata.Tokens["ports"] != &value {
 		t.Fatalf("transport = %#v", transport)
 	}
 }
