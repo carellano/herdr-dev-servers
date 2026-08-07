@@ -1,15 +1,22 @@
 package daemon
 
 import (
+	"context"
 	"sync"
 
 	"github.com/carellano/herdr-apps/internal/model"
 )
 
+// ActionExecutor performs only daemon-validated action intents.
+type ActionExecutor interface {
+	Execute(context.Context, model.ActionRequest, model.Application) (model.ActionResult, error)
+}
+
 // Service is the single daemon authority for complete application revisions.
 type Service struct {
 	mu       sync.RWMutex
 	snapshot model.Snapshot
+	Actions  ActionExecutor
 }
 
 // Snapshot returns a defensive copy of the latest complete graph.

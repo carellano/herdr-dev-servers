@@ -21,6 +21,25 @@ type Client interface {
 	Request(context.Context, model.IPCRequest) (model.IPCResponse, error)
 }
 
+// ExecuteAction sends a daemon-owned action intent, then refreshes from that authority.
+func ExecuteAction(ctx context.Context, client Client, key string, app model.Application, revision uint64, confirmed bool) (model.ActionResult, model.Snapshot, error) {
+	action := map[string]string{"enter": "focus", "f": "focus", "o": "open", "c": "copy", "t": "terminate", "K": "kill"}[key]
+	if action == "" {
+		return model.ActionResult{}, model.Snapshot{}, fmt.Errorf("unsupported action %q", key)
+	}
+	response, err := client.Request(ctx, model.IPCRequest{Version: daemon.IPCVersion, RequestID: "action", ObservedRevision: revision, Method: "action", Action: action, Target: app.ID, Identity: app.Identity, Confirmed: confirmed})
+	if err != nil {
+		return model.ActionResult{}, model.Snapshot{}, err
+	}
+	data, _ := json.Marshal(response.Result)
+	var result model.ActionResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return model.ActionResult{}, model.Snapshot{}, err
+	}
+	snapshot, err := List(ctx, client)
+	return result, snapshot, err
+}
+
 func RenderList(snapshot model.Snapshot, jsonOutput bool) (string, error) {
 	if jsonOutput {
 		data, err := json.MarshalIndent(snapshot.Applications, "", "  ")

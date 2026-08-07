@@ -18,7 +18,8 @@ var (
 
 type APIError struct{ Code, Message string }
 
-func (e *APIError) Error() string { return fmt.Sprintf("Herdr %s: %s", e.Code, e.Message) }
+func (e *APIError) Error() string   { return fmt.Sprintf("Herdr %s: %s", e.Code, e.Message) }
+func (e *APIError) IPCCode() string { return "herdr_" + e.Code }
 
 // JSONLTransport is the low-level Herdr Unix-socket JSONL boundary. Higher-level
 // operations remain capability-gated and must not infer live protocol behavior.

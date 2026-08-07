@@ -227,6 +227,11 @@ func Serve(ctx context.Context, paths Paths, service *Service, inspector Process
 
 type Client struct{ Socket string }
 
+// IPCClientError retains the daemon's typed protocol code for actionable clients.
+type IPCClientError struct{ Payload *model.IPCError }
+
+func (e *IPCClientError) Error() string { return "daemon " + e.Payload.Code + ": " + e.Payload.Message }
+
 func (c Client) Request(ctx context.Context, request model.IPCRequest) (model.IPCResponse, error) {
 	dialer := net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "unix", c.Socket)
@@ -242,7 +247,7 @@ func (c Client) Request(ctx context.Context, request model.IPCRequest) (model.IP
 		return model.IPCResponse{}, fmt.Errorf("read daemon response: %w", err)
 	}
 	if response.Error != nil {
-		return response, fmt.Errorf("daemon %s: %s", response.Error.Code, response.Error.Message)
+		return response, &IPCClientError{Payload: response.Error}
 	}
 	return response, nil
 }

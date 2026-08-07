@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
+	"github.com/carellano/herdr-apps/internal/actions"
 	"github.com/carellano/herdr-apps/internal/adapter"
 	"github.com/carellano/herdr-apps/internal/cli"
 	"github.com/carellano/herdr-apps/internal/config"
@@ -55,7 +57,7 @@ func run(args []string, out io.Writer) error {
 		_ = cfg
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		service := &daemon.Service{}
+		service := &daemon.Service{Actions: actions.Executor{Service: actions.Service{Platform: runtime.GOOS}}}
 		runtime := adapter.NewFactory(adapter.DefaultSocket()).Runtime(service)
 		errs := make(chan error, 2)
 		go func() { errs <- daemon.Serve(ctx, paths, service, daemon.NewSystemInspector()) }()
@@ -73,8 +75,9 @@ func run(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		_, err = tea.NewProgram(ui.New(snapshot, func(string, model.Application) string {
-			return "action unavailable: daemon action bridge is not configured"
+		client := daemon.Client{Socket: paths.Socket}
+		_, err = tea.NewProgram(ui.New(snapshot, func(ctx context.Context, key string, app model.Application, revision uint64) (model.ActionResult, model.Snapshot, error) {
+			return cli.ExecuteAction(ctx, client, key, app, revision, false)
 		})).Run()
 		return err
 	}

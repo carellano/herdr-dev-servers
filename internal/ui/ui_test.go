@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,7 +12,9 @@ import (
 
 func TestResponsiveViewAndTransitions(t *testing.T) {
 	snapshot := model.Snapshot{Revision: 2, Applications: []model.Application{{ID: "owned", Endpoints: []model.Endpoint{{Port: 3000}}}, {ID: "external", External: true}}}
-	m := New(snapshot, func(key string, _ model.Application) string { return key + " executed" })
+	m := New(snapshot, func(_ context.Context, key string, _ model.Application, _ uint64) (model.ActionResult, model.Snapshot, error) {
+		return model.ActionResult{Outcome: key + " executed"}, snapshot, nil
+	})
 	for _, width := range []int{70, 90, 130} {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
 		m = next.(Model)
@@ -27,7 +31,9 @@ func TestResponsiveViewAndTransitions(t *testing.T) {
 	if !strings.Contains(m.View(), "external") {
 		t.Fatal("all toggle did not reveal external app")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	next, _ = m.Update(command())
 	m = next.(Model)
 	if !strings.Contains(m.View(), "enter executed") {
 		t.Fatal("action was not routed")
@@ -51,8 +57,8 @@ func TestDiscardsObsoleteSnapshot(t *testing.T) {
 
 func TestSelectionAndUnavailableAction(t *testing.T) {
 	snapshot := model.Snapshot{Applications: []model.Application{{ID: "first"}, {ID: "second"}}}
-	m := New(snapshot, func(string, model.Application) string {
-		return "action unavailable: daemon action bridge is not configured"
+	m := New(snapshot, func(context.Context, string, model.Application, uint64) (model.ActionResult, model.Snapshot, error) {
+		return model.ActionResult{}, model.Snapshot{}, errors.New("action unavailable: daemon action bridge is not configured")
 	})
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 90, Height: 24})
 	m = next.(Model)
@@ -61,7 +67,8 @@ func TestSelectionAndUnavailableAction(t *testing.T) {
 	if !strings.Contains(m.View(), "> second") || !strings.Contains(m.View(), "confidence:") {
 		t.Fatalf("selection did not update detail: %q", m.View())
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = next.Update(command())
 	if !strings.Contains(next.(Model).View(), "action unavailable: daemon action bridge is not configured") {
 		t.Fatal("unavailable action was not explicit")
 	}

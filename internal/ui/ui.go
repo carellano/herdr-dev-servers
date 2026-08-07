@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -11,7 +12,12 @@ import (
 )
 
 type SnapshotMsg struct{ Snapshot model.Snapshot }
-type Action func(string, model.Application) string
+type Action func(context.Context, string, model.Application, uint64) (model.ActionResult, model.Snapshot, error)
+type actionMsg struct {
+	result   model.ActionResult
+	snapshot model.Snapshot
+	err      error
+}
 
 type Model struct {
 	snapshot              model.Snapshot
@@ -36,6 +42,18 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = max(0, len(m.apps())-1)
 			}
 		}
+	case actionMsg:
+		if msg.err != nil {
+			m.status = msg.err.Error()
+		} else {
+			m.status = msg.result.Outcome
+			if msg.result.Warning != "" {
+				m.status += ": " + msg.result.Warning
+			}
+			if msg.snapshot.Revision >= m.snapshot.Revision {
+				m.snapshot = msg.snapshot
+			}
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -55,7 +73,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.help = !m.help
 		case "enter", "o", "c", "f", "t", "K":
 			if apps := m.apps(); len(apps) > 0 && m.action != nil {
-				m.status = m.action(msg.String(), apps[m.cursor])
+				key, app, revision := msg.String(), apps[m.cursor], m.snapshot.Revision
+				return m, func() tea.Msg {
+					result, snapshot, err := m.action(context.Background(), key, app, revision)
+					return actionMsg{result: result, snapshot: snapshot, err: err}
+				}
 			}
 		}
 	}

@@ -98,11 +98,27 @@ func (s Snapshot) SemanticallyEqual(other Snapshot) bool {
 
 // IPCRequest is the versioned request envelope used by plugin-local JSONL IPC.
 type IPCRequest struct {
-	Version          int    `json:"version"`
-	RequestID        string `json:"requestId"`
-	ObservedRevision uint64 `json:"observedRevision"`
-	Method           string `json:"method"`
-	Target           string `json:"target,omitempty"`
+	Version          int             `json:"version"`
+	RequestID        string          `json:"requestId"`
+	ObservedRevision uint64          `json:"observedRevision"`
+	Method           string          `json:"method"`
+	Target           string          `json:"target,omitempty"`
+	Action           string          `json:"action,omitempty"`
+	Identity         ProcessIdentity `json:"identity,omitempty"`
+	Confirmed        bool            `json:"confirmed,omitempty"`
+}
+
+// ActionRequest is the daemon-validated intent passed to its safe action executor.
+type ActionRequest struct {
+	Action    string
+	Confirmed bool
+}
+
+// ActionResult preserves exact and warning-bearing action outcomes across IPC.
+type ActionResult struct {
+	Outcome       string `json:"outcome"`
+	Warning       string `json:"warning,omitempty"`
+	ForceEligible bool   `json:"forceEligible,omitempty"`
 }
 
 // IPCError is a typed IPC error.
