@@ -2,6 +2,7 @@ package herdr
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/carellano/herdr-apps/internal/daemon"
@@ -70,4 +71,24 @@ func TestCapabilitiesRequireProtocolAndSchema(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconnectKeepsCompleteCacheWhenConfirmationFails(t *testing.T) {
+	cache := &Cache{}
+	cache.Replace(model.Snapshot{Applications: []model.Application{{ID: "complete"}}})
+	client := Client{Transport: &failingTransport{}, Service: &daemon.Service{}, Cache: cache}
+	if _, err := client.Reconnect(context.Background()); !errors.Is(err, errStreamLost) {
+		t.Fatalf("error = %v", err)
+	}
+	if got := cache.Snapshot().Applications[0].ID; got != "complete" {
+		t.Fatalf("cache = %q", got)
+	}
+}
+
+var errStreamLost = errors.New("stream lost")
+
+type failingTransport struct{ fakeTransport }
+
+func (f *failingTransport) Snapshot(context.Context) (model.Snapshot, error) {
+	return model.Snapshot{}, errStreamLost
 }

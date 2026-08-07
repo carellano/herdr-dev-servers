@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/carellano/herdr-apps/internal/daemon"
 	"github.com/carellano/herdr-apps/internal/model"
 )
 
@@ -14,11 +13,14 @@ type Transport interface {
 	Snapshot(context.Context) (model.Snapshot, error)
 	Subscribe(context.Context) error
 }
+type SnapshotPublisher interface {
+	Replace(model.Snapshot) model.Snapshot
+}
 
 // Client gates static compatibility and rebuilds state from two complete snapshots.
 type Client struct {
 	Transport Transport
-	Service   *daemon.Service
+	Service   SnapshotPublisher
 	Cache     *Cache
 }
 
