@@ -22,12 +22,24 @@ func (s *Service) ServeJSONL(reader io.Reader, writer io.Writer) error {
 		response := model.IPCResponse{Version: IPCVersion, RequestID: request.RequestID}
 		if request.Version != IPCVersion {
 			response.Error = &model.IPCError{Code: "unsupported_version", Message: "IPC version is unsupported"}
-		} else if request.Method != "list" {
+		} else if request.Method != "list" && request.Method != "inspect" {
 			response.Error = &model.IPCError{Code: "unsupported_method", Message: "method is unavailable in the foundation release"}
 		} else {
 			snapshot := s.Snapshot()
 			response.Revision = snapshot.Revision
-			response.Result = snapshot
+			if request.Method == "list" {
+				response.Result = snapshot
+			} else {
+				for _, application := range snapshot.Applications {
+					if application.ID == request.Target {
+						response.Result = application
+						break
+					}
+				}
+				if response.Result == nil {
+					response.Error = &model.IPCError{Code: "not_found", Message: "application is unavailable"}
+				}
+			}
 		}
 		if err := writeResponse(writer, response); err != nil {
 			return err

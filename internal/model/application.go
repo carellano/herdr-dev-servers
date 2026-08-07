@@ -66,6 +66,7 @@ type IPCRequest struct {
 	RequestID        string `json:"requestId"`
 	ObservedRevision uint64 `json:"observedRevision"`
 	Method           string `json:"method"`
+	Target           string `json:"target,omitempty"`
 }
 
 // IPCError is a typed IPC error.
