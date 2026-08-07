@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 )
 
 // URLPolicy accepts only openable local HTTP(S) endpoints. Launching is deliberately owned by PR3 actions.
 type URLPolicy struct{ AllowedHosts []string }
 
 func (p URLPolicy) Validate(raw string) (string, error) {
-	if strings.ContainsAny(raw, "\r\n\x00") {
+	if containsControl(raw) {
 		return "", fmt.Errorf("URL contains control characters")
 	}
 	parsed, err := url.Parse(raw)
@@ -29,6 +28,15 @@ func (p URLPolicy) Validate(raw string) (string, error) {
 		return "", fmt.Errorf("URL host %q is not allowlisted", host)
 	}
 	return parsed.String(), nil
+}
+
+func containsControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func (p URLPolicy) allowed(host string) bool {
