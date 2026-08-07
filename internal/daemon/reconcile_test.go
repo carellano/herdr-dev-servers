@@ -49,6 +49,36 @@ func TestReconcile(t *testing.T) {
 			t.Fatal("unmatched listener was not external")
 		}
 	})
+	t.Run("Herdr foreground parent owns controlled listener", func(t *testing.T) {
+		in := base
+		in.Listeners = []discovery.Listener{{PID: 666, Port: 38181, Address: "127.0.0.1"}}
+		in.Processes = map[int]discovery.Process{
+			666: {PID: 666, ParentPID: 42, StartTime: "listener", PGID: 42, Executable: "python", Args: []string{"python", "server.py"}, CWD: "/work/app"},
+			42:  {PID: 42, ParentPID: 7, StartTime: "pane", PGID: 42, Executable: "zsh", CWD: "/work/app"},
+			7:   {PID: 7, Executable: "login", CWD: "/work"},
+		}
+		got, err := Reconcile(model.Snapshot{}, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		app := got.Applications[0]
+		if app.External || app.Association.Confidence != model.ConfidenceHigh || app.Association.WorkspaceID != "w" || app.Association.TabID != "t" || app.Association.PaneID != "p" {
+			t.Fatalf("association = %#v, external = %t", app.Association, app.External)
+		}
+	})
+	t.Run("unrelated shared PGID and CWD remains external", func(t *testing.T) {
+		in := base
+		in.Listeners = []discovery.Listener{{PID: 666, Port: 38181, Address: "127.0.0.1"}}
+		in.Processes = map[int]discovery.Process{666: {PID: 666, ParentPID: 7, StartTime: "listener", PGID: 42, Executable: "python", Args: []string{"python", "server.py"}, CWD: "/work/app"}, 7: {PID: 7, Executable: "login", CWD: "/work"}}
+		got, err := Reconcile(model.Snapshot{}, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		app := got.Applications[0]
+		if !app.External || app.Association.Confidence != model.ConfidenceUnknown {
+			t.Fatalf("association = %#v, external = %t", app.Association, app.External)
+		}
+	})
 	t.Run("ports share launch identity", func(t *testing.T) {
 		in := base
 		in.Listeners = append(in.Listeners, discovery.Listener{PID: 42, Port: 5173, Address: "127.0.0.1"})

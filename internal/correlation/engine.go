@@ -93,7 +93,7 @@ func Build(input Input) Result {
 func associate(app *model.Application, process discovery.Process, panes []PaneEvidence, observedAt time.Time) {
 	var matches []PaneEvidence
 	for _, pane := range panes {
-		if pane.PID == app.Identity.PID || pane.PID == 0 && cwdMatches(process.CWD, pane.CWD) {
+		if pane.PID == app.Identity.PID || process.ParentPID > 0 && pane.PID == process.ParentPID || pane.PID == 0 && cwdMatches(process.CWD, pane.CWD) {
 			matches = append(matches, pane)
 		}
 	}
