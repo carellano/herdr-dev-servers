@@ -17,12 +17,25 @@ import (
 
 type Paths struct{ StateDir, Socket, Lock string }
 
+// Ticker provides a fakeable periodic reconciliation clock.
+type Ticker interface {
+	Chan() <-chan time.Time
+	Stop()
+}
+
+type systemTicker struct{ *time.Ticker }
+
+func (t systemTicker) Chan() <-chan time.Time { return t.C }
+
 // Runtime rebuilds complete reconciled snapshots around the persistent Herdr event stream.
 type Runtime struct {
 	Service   *Service
 	Subscribe func(context.Context) (<-chan struct{}, error)
 	Rebuild   func(context.Context, model.Snapshot) (model.Snapshot, error)
 	Publish   func(context.Context, []model.Application) error
+	NewTicker func(time.Duration) Ticker
+	Wait      func(context.Context, time.Duration) error
+	Interval  time.Duration
 	Backoff   time.Duration
 	Retries   int
 }
@@ -46,6 +59,25 @@ func (r Runtime) Run(ctx context.Context) error {
 	if retries < 1 {
 		retries = 3
 	}
+	interval := r.Interval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	newTicker := r.NewTicker
+	if newTicker == nil {
+		newTicker = func(interval time.Duration) Ticker { return systemTicker{time.NewTicker(interval)} }
+	}
+	wait := r.Wait
+	if wait == nil {
+		wait = func(ctx context.Context, duration time.Duration) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(duration):
+				return nil
+			}
+		}
+	}
 	for failures := 0; ; {
 		if _, err := r.Rebuild(ctx, r.Service.Snapshot()); err == nil {
 			events, err := r.Subscribe(ctx)
@@ -58,35 +90,18 @@ func (r Runtime) Run(ctx context.Context) error {
 						}
 					}
 					failures = 0
-				eventsLoop:
-					for {
-						select {
-						case <-ctx.Done():
-							return nil
-						case _, ok := <-events:
-							if !ok {
-								break eventsLoop
-							}
-							for len(events) > 0 {
-								<-events
-							}
-							if snapshot, err := r.Rebuild(ctx, r.Service.Snapshot()); err == nil {
-								published := r.Service.Replace(snapshot)
-								if r.Publish != nil {
-									if err := r.Publish(ctx, published.Applications); err != nil {
-										return err
-									}
-								}
-							}
-						}
+					err := r.runEvents(ctx, events, interval, newTicker)
+					if err != nil {
+						return err
 					}
 					if ctx.Err() != nil {
 						return nil
 					}
-					select {
-					case <-ctx.Done():
-						return nil
-					case <-time.After(backoff):
+					if err := wait(ctx, backoff); err != nil {
+						if ctx.Err() != nil {
+							return nil
+						}
+						return err
 					}
 					continue
 				}
@@ -96,10 +111,49 @@ func (r Runtime) Run(ctx context.Context) error {
 		if failures >= retries {
 			return &RuntimeError{fmt.Errorf("reconnect failed after %d attempts", failures)}
 		}
+		if err := wait(ctx, backoff); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func (r Runtime) runEvents(ctx context.Context, events <-chan struct{}, interval time.Duration, newTicker func(time.Duration) Ticker) error {
+	ticker := newTicker(interval)
+	defer ticker.Stop()
+	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(backoff):
+		case _, ok := <-events:
+			if !ok {
+				return nil
+			}
+			for len(events) > 0 {
+				<-events
+			}
+			if snapshot, err := r.Rebuild(ctx, r.Service.Snapshot()); err == nil {
+				published := r.Service.Replace(snapshot)
+				if r.Publish != nil {
+					if err := r.Publish(ctx, published.Applications); err != nil {
+						return err
+					}
+				}
+			}
+		case <-ticker.Chan():
+			for len(ticker.Chan()) > 0 {
+				<-ticker.Chan()
+			}
+			if snapshot, err := r.Rebuild(ctx, r.Service.Snapshot()); err == nil {
+				published := r.Service.Replace(snapshot)
+				if r.Publish != nil {
+					if err := r.Publish(ctx, published.Applications); err != nil {
+						return err
+					}
+				}
+			}
 		}
 	}
 }
@@ -239,6 +293,11 @@ func (c Client) Request(ctx context.Context, request model.IPCRequest) (model.IP
 		return model.IPCResponse{}, fmt.Errorf("connect to daemon: %w", err)
 	}
 	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return model.IPCResponse{}, fmt.Errorf("set daemon deadline: %w", err)
+		}
+	}
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return model.IPCResponse{}, err
 	}

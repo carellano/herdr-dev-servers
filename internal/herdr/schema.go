@@ -20,6 +20,29 @@ type Capabilities struct {
 type SnapshotResponse struct {
 	Snapshot json.RawMessage `json:"snapshot"`
 }
+
+// PaneTarget identifies one pane for a focus request.
+type PaneTarget struct {
+	PaneID string `json:"pane_id"`
+}
+
+// WorkspaceTarget identifies one workspace for a focus request.
+type WorkspaceTarget struct {
+	WorkspaceID string `json:"workspace_id"`
+}
+
+// TabTarget identifies one tab for a focus request.
+type TabTarget struct {
+	TabID string `json:"tab_id"`
+}
+
+// FocusSnapshotResponse is the current focus reported by session.snapshot.
+type FocusSnapshotResponse struct {
+	FocusedWorkspaceID string `json:"focused_workspace_id"`
+	FocusedTabID       string `json:"focused_tab_id"`
+	FocusedPaneID      string `json:"focused_pane_id"`
+}
+
 type ProcessInfoRequest struct {
 	PaneID string `json:"pane_id,omitempty"`
 }

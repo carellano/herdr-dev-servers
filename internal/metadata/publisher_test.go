@@ -10,32 +10,59 @@ import (
 	"github.com/carellano/herdr-apps/internal/model"
 )
 
-type reportCall struct{ workspace, value string }
+type reportCall struct{ workspace, source, key, value string }
 type reporterFake struct {
 	calls []reportCall
 	fail  string
 }
 
-func (f *reporterFake) ReportMetadata(_ context.Context, workspace, _ string, tokens map[string]*string) error {
+func (f *reporterFake) ReportMetadata(_ context.Context, workspace, source string, tokens map[string]*string) error {
 	if workspace == f.fail {
 		return errors.New("stopped")
 	}
 	value := ""
-	if tokens["ports"] != nil {
-		value = *tokens["ports"]
+	if tokens["apps"] != nil {
+		value = *tokens["apps"]
 	}
-	f.calls = append(f.calls, reportCall{workspace, value})
+	for key := range tokens {
+		f.calls = append(f.calls, reportCall{workspace, source, key, value})
+	}
 	return nil
 }
 
-func TestPublisherBoundsStableOutputAndSuppressesUnchangedWrites(t *testing.T) {
-	app := model.Application{Endpoints: []model.Endpoint{{URL: "http://127.0.0.1:3000"}, {URL: "http://127.0.0.1:3001"}, {URL: "http://127.0.0.1:3002"}, {URL: "http://127.0.0.1:3003"}, {URL: "http://127.0.0.1:3004"}, {URL: "http://127.0.0.1:3005"}, {URL: "http://127.0.0.1:3006"}}}
-	publisher := Publisher{}
-	first := publisher.Prepare([]model.Application{app})
-	if !first.Changed || len(first.Value) > 80 || !strings.Contains(first.Value, "+") {
-		t.Fatalf("first publication = %#v, want bounded changed +N", first)
+func TestPublisherPrepareUsesCompactPositivePorts(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		apps []model.Application
+		want string
+	}{
+		{"one port without URL", []model.Application{{Endpoints: []model.Endpoint{{Port: 8081}}}}, ":8081"},
+		{"sorted and deduplicated", []model.Application{{Endpoints: []model.Endpoint{{Port: 8081}, {Port: 3000}, {Port: 8081}, {Port: 0}, {Port: -1}}}}, ":3000 :8081"},
+		{"endpoint limit", []model.Application{{Endpoints: []model.Endpoint{{Port: 3006}, {Port: 3000}, {Port: 3005}, {Port: 3001}, {Port: 3004}, {Port: 3002}, {Port: 3003}}}}, ":3000 :3001 :3002 :3003 :3004 :3005 +1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			publication := (&Publisher{}).Prepare(tt.apps)
+			if !publication.Changed || publication.Value != tt.want {
+				t.Fatalf("publication = %#v, want changed %q", publication, tt.want)
+			}
+		})
 	}
-	if second := publisher.Prepare([]model.Application{app}); second.Changed {
+
+	ports := []model.Endpoint{}
+	maxInt := int(^uint(0) >> 1)
+	for _, port := range []int{maxInt - 5, maxInt - 4, maxInt - 3, maxInt - 2, maxInt - 1, maxInt} {
+		ports = append(ports, model.Endpoint{Port: port})
+	}
+	publication := (&Publisher{}).Prepare([]model.Application{{Endpoints: ports}})
+	if len(publication.Value) > maxBytes || !strings.HasSuffix(publication.Value, "+3") {
+		t.Fatalf("byte-bounded publication = %#v", publication)
+	}
+
+	publisher := Publisher{}
+	if publisher.Prepare([]model.Application{{Endpoints: []model.Endpoint{{Port: 8081}}}}).Changed == false {
+		t.Fatal("first publication was suppressed")
+	}
+	if second := publisher.Prepare([]model.Application{{Endpoints: []model.Endpoint{{Port: 8081}}}}); second.Changed {
 		t.Fatalf("unchanged publication = %#v, want suppression", second)
 	}
 }
@@ -50,8 +77,8 @@ func TestCompatibilityGuidanceExplainsUnsupportedHerdr(t *testing.T) {
 func TestPublishWritesOnlyChangedWorkspacesAndClearsRemoved(t *testing.T) {
 	publisher, reporter := Publisher{}, &reporterFake{}
 	apps := []model.Application{
-		{Association: model.Association{WorkspaceID: "a"}, Endpoints: []model.Endpoint{{URL: "http://127.0.0.1:3000"}}},
-		{Association: model.Association{WorkspaceID: "b"}, Endpoints: []model.Endpoint{{URL: "http://127.0.0.1:3001"}}},
+		{Association: model.Association{WorkspaceID: "a"}, Endpoints: []model.Endpoint{{Port: 3000}}},
+		{Association: model.Association{WorkspaceID: "b"}, Endpoints: []model.Endpoint{{Port: 3001}}},
 	}
 	if err := publisher.Publish(context.Background(), apps, reporter); err != nil {
 		t.Fatal(err)
@@ -59,8 +86,8 @@ func TestPublishWritesOnlyChangedWorkspacesAndClearsRemoved(t *testing.T) {
 	if len(reporter.calls) != 2 {
 		t.Fatalf("calls = %#v", reporter.calls)
 	}
-	if reporter.calls[0].value == "" || reporter.calls[1].value == "" {
-		t.Fatalf("ports token missing from calls = %#v", reporter.calls)
+	if reporter.calls[0] != (reportCall{workspace: "a", source: "herdr-apps", key: "apps", value: ":3000"}) || reporter.calls[1] != (reportCall{workspace: "b", source: "herdr-apps", key: "apps", value: ":3001"}) {
+		t.Fatalf("metadata calls = %#v", reporter.calls)
 	}
 	if err := publisher.Publish(context.Background(), apps, reporter); err != nil {
 		t.Fatal(err)
@@ -71,16 +98,27 @@ func TestPublishWritesOnlyChangedWorkspacesAndClearsRemoved(t *testing.T) {
 	if err := publisher.Publish(context.Background(), apps[:1], reporter); err != nil {
 		t.Fatal(err)
 	}
-	if got := reporter.calls[2]; got.workspace != "b" || got.value != "" {
+	if got := reporter.calls[2]; got.workspace != "b" || got.source != "herdr-apps" || got.key != "apps" || got.value != "" {
 		t.Fatalf("removed workspace clear = %#v", got)
+	}
+}
+
+func TestPublishIncludesPortWithoutURL(t *testing.T) {
+	publisher, reporter := Publisher{}, &reporterFake{}
+	apps := []model.Application{{Association: model.Association{WorkspaceID: "wC"}, Endpoints: []model.Endpoint{{Port: 8081}}}}
+	if err := publisher.Publish(context.Background(), apps, reporter); err != nil {
+		t.Fatal(err)
+	}
+	if got := reporter.calls; len(got) != 1 || got[0] != (reportCall{workspace: "wC", source: "herdr-apps", key: "apps", value: ":8081"}) {
+		t.Fatalf("calls = %#v", got)
 	}
 }
 
 func TestPublishReturnsTypedReportErrorWithoutPartialState(t *testing.T) {
 	publisher, reporter := Publisher{}, &reporterFake{fail: "b"}
 	apps := []model.Application{
-		{Association: model.Association{WorkspaceID: "a"}, Endpoints: []model.Endpoint{{URL: "http://127.0.0.1:3000"}}},
-		{Association: model.Association{WorkspaceID: "b"}, Endpoints: []model.Endpoint{{URL: "http://127.0.0.1:3001"}}},
+		{Association: model.Association{WorkspaceID: "a"}, Endpoints: []model.Endpoint{{Port: 3000}}},
+		{Association: model.Association{WorkspaceID: "b"}, Endpoints: []model.Endpoint{{Port: 3001}}},
 	}
 	var reportErr *ReportError
 	if err := publisher.Publish(context.Background(), apps, reporter); !errors.As(err, &reportErr) || reportErr.WorkspaceID != "b" {
@@ -96,12 +134,12 @@ func TestPublishReturnsTypedReportErrorWithoutPartialState(t *testing.T) {
 
 func TestHerdrReporterUsesMetadataTransport(t *testing.T) {
 	transport := &metadataTransportFake{}
-	value := "http://127.0.0.1:3000"
+	value := ":3000"
 	reporter := HerdrReporter{Transport: transport, RequestID: func() string { return "request" }}
-	if err := reporter.ReportMetadata(context.Background(), "workspace", "herdr-apps", map[string]*string{"ports": &value}); err != nil {
+	if err := reporter.ReportMetadata(context.Background(), "workspace", "herdr-apps", map[string]*string{"apps": &value}); err != nil {
 		t.Fatal(err)
 	}
-	if transport.id != "request" || transport.metadata.WorkspaceID != "workspace" || transport.metadata.Tokens["ports"] != &value {
+	if transport.id != "request" || transport.metadata.WorkspaceID != "workspace" || transport.metadata.Source != "herdr-apps" || transport.metadata.Tokens["apps"] != &value {
 		t.Fatalf("transport = %#v", transport)
 	}
 }

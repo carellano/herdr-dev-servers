@@ -5,11 +5,27 @@ min_herdr_version = "0.8.0"
 description = "Discover and safely inspect listening development applications."
 platforms = ["linux", "macos"]
 
+[[build]]
+command = ["go", "build", "-o", "./herdr-apps", "./cmd/herdr-apps"]
+
+[[startup]]
+command = ["./herdr-apps", "ensure-watch"]
+
+[[events]]
+on = "pane.created"
+command = ["./herdr-apps", "ensure-watch"]
+
 [[actions]]
 id = "list"
 title = "List listening applications"
 contexts = ["workspace"]
-command = ["herdr-apps", "list"]
+command = ["./herdr-apps", "list"]
+
+[[actions]]
+id = "apps"
+title = "Open Herdr Apps"
+contexts = ["workspace"]
+command = ["./herdr-apps", "open"]
 
 [[panes]]
 id = "apps"
@@ -17,4 +33,4 @@ title = "Herdr Apps"
 placement = "popup"
 width = "80%"
 height = "80%"
-command = ["herdr-apps", "tui"]
+command = ["./herdr-apps", "tui"]

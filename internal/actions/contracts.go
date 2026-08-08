@@ -43,7 +43,7 @@ type FocusClient interface {
 
 // ProcessInspector re-reads the process incarnation immediately before a signal.
 type ProcessInspector interface {
-	Inspect(pid int) (model.ProcessIdentity, error)
+	Inspect(context.Context, int) (model.ProcessIdentity, error)
 	Wait(context.Context, model.ProcessIdentity) error
 }
 

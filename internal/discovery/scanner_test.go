@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -100,16 +101,81 @@ func TestParseLinuxTCPListenersUsesDeterministicFixture(t *testing.T) {
 }
 
 func TestDarwinProcessTableUsesFixedArgv(t *testing.T) {
-	runner := &fakeRunner{out: []byte("42 1 42 /usr/bin/node node server.js\n")}
+	runner := &fakeRunner{out: []byte("42 1 42 Thu Aug  7 12:34:56 2026 /usr/bin/node node server.js\n")}
 	table := DarwinProcessTable{Runner: runner}
 	process, err := table.Lookup(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
 	}
-	if want := []string{"ps", "-o", "pid=,ppid=,pgid=,comm=,args=", "-p", "42"}; !reflect.DeepEqual(runner.argv, want) {
+	if want := []string{"ps", "-o", "pid=,ppid=,pgid=,lstart=,comm=,args=", "-p", "42"}; !reflect.DeepEqual(runner.argv, want) {
 		t.Fatalf("argv = %#v, want %#v", runner.argv, want)
 	}
-	if process.PID != 42 || process.ParentPID != 1 || process.CWD != "" || process.Executable != "/usr/bin/node" {
+	if process.PID != 42 || process.ParentPID != 1 || process.StartTime != "Thu Aug 7 12:34:56 2026" || process.CWD != "" || process.Executable != "/usr/bin/node" {
 		t.Fatalf("process = %#v", process)
+	}
+}
+
+func TestParseDarwinProcess(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		data string
+		want Process
+		bad  bool
+	}{
+		{name: "normal", data: "42 1 42 Thu Aug  7 12:34:56 2026 /usr/bin/node node server.js", want: Process{PID: 42, ParentPID: 1, PGID: 42, StartTime: "Thu Aug 7 12:34:56 2026", Executable: "/usr/bin/node", Args: []string{"node", "server.js"}}},
+		{name: "spaces in arguments", data: "42 1 42 Thu Aug  7 12:34:56 2026 /bin/sh sh -c echo hello world", want: Process{PID: 42, ParentPID: 1, PGID: 42, StartTime: "Thu Aug 7 12:34:56 2026", Executable: "/bin/sh", Args: []string{"sh", "-c", "echo", "hello", "world"}}},
+		{name: "malformed", data: "42 1", bad: true},
+		{name: "invalid start", data: "42 1 42 impossible start time text /bin/sh sh", bad: true},
+		{name: "missing command", data: "42 1 42 Thu Aug  7 12:34:56 2026", bad: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ParseDarwinProcess([]byte(test.data))
+			if (err != nil) != test.bad || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("ParseDarwinProcess() = %#v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestDarwinProcessTableRejectsPIDMismatch(t *testing.T) {
+	_, err := (DarwinProcessTable{Runner: &fakeRunner{out: []byte("43 1 42 Thu Aug  7 12:34:56 2026 /bin/sh sh")}}).Lookup(context.Background(), 42)
+	if err == nil {
+		t.Fatal("Lookup() succeeded for mismatched PID")
+	}
+}
+
+func TestParseLinuxProcessStat(t *testing.T) {
+	stat := func(pid, command, parent, pgid, start string) []byte {
+		fields := []string{"S", parent, pgid}
+		for len(fields) < 19 {
+			fields = append(fields, "0")
+		}
+		fields = append(fields, start)
+		return []byte(pid + " (" + command + ") " + strings.Join(fields, " "))
+	}
+	for _, test := range []struct {
+		name string
+		pid  int
+		data []byte
+		want Process
+		bad  bool
+	}{
+		{name: "ordinary command", pid: 42, data: stat("42", "node", "1", "42", "100"), want: Process{PID: 42, ParentPID: 1, PGID: 42, StartTime: "100"}},
+		{name: "spaces in command", pid: 42, data: stat("42", "node worker", "1", "42", "100"), want: Process{PID: 42, ParentPID: 1, PGID: 42, StartTime: "100"}},
+		{name: "closing parentheses in command", pid: 42, data: stat("42", "node) worker (dev", "1", "42", "100"), want: Process{PID: 42, ParentPID: 1, PGID: 42, StartTime: "100"}},
+		{name: "missing closing parenthesis", pid: 42, data: []byte("42 (node S 1 42"), bad: true},
+		{name: "incomplete fields", pid: 42, data: []byte("42 (node) S 1 42"), bad: true},
+		{name: "invalid PID", pid: 42, data: stat("not-a-pid", "node", "1", "42", "100"), bad: true},
+		{name: "mismatched PID", pid: 42, data: stat("43", "node", "1", "42", "100"), bad: true},
+		{name: "invalid parent", pid: 42, data: stat("42", "node", "parent", "42", "100"), bad: true},
+		{name: "invalid group", pid: 42, data: stat("42", "node", "1", "group", "100"), bad: true},
+		{name: "invalid start", pid: 42, data: stat("42", "node", "1", "42", "start"), bad: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ParseLinuxProcessStat(test.pid, test.data)
+			if (err != nil) != test.bad || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("ParseLinuxProcessStat() = %#v, %v", got, err)
+			}
+		})
 	}
 }

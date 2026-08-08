@@ -21,6 +21,8 @@ type Client interface {
 	Request(context.Context, model.IPCRequest) (model.IPCResponse, error)
 }
 
+type socketProbe func(string) error
+
 // ExecuteAction sends a daemon-owned action intent, then refreshes from that authority.
 func ExecuteAction(ctx context.Context, client Client, key string, app model.Application, revision uint64, confirmed bool) (model.ActionResult, model.Snapshot, error) {
 	action := map[string]string{"enter": "focus", "f": "focus", "o": "open", "c": "copy", "t": "terminate", "K": "kill"}[key]
@@ -70,20 +72,37 @@ func List(ctx context.Context, client Client) (model.Snapshot, error) {
 	return snapshot, json.Unmarshal(data, &snapshot)
 }
 func Doctor(paths daemon.Paths, cfg config.Config) string {
+	return doctor(paths, cfg, herdrSocket(), probeHerdrSocket)
+}
+
+func doctor(paths daemon.Paths, cfg config.Config, socket string, probe socketProbe) string {
 	checks := []string{"plugin config: valid", "scanner: platform adapter configured", "clipboard: " + cfg.Clipboard, "opener: " + cfg.Opener, fmt.Sprintf("sidebar: %d..%d", cfg.SidebarMin, cfg.SidebarMax)}
 	if _, err := os.Stat(paths.Socket); err == nil {
 		checks = append(checks, "daemon socket: available")
 	} else {
 		checks = append(checks, "daemon socket: unavailable (start `herdr-apps daemon`)")
 	}
-	herdrSocket := filepath.Join(os.Getenv("HOME"), ".config", "herdr", "herdr.sock")
-	if conn, err := net.Dial("unix", herdrSocket); err == nil {
-		conn.Close()
+	if err := probe(socket); err == nil {
 		checks = append(checks, "Herdr API: reachable; live schema validation pending")
 	} else {
 		checks = append(checks, "Herdr API: unavailable; live checks not claimed")
 	}
 	return strings.Join(checks, "\n") + "\n"
+}
+
+func herdrSocket() string {
+	if socket := os.Getenv("HERDR_SOCKET_PATH"); socket != "" {
+		return socket
+	}
+	return filepath.Join(os.Getenv("HOME"), ".config", "herdr", "herdr.sock")
+}
+
+func probeHerdrSocket(socket string) error {
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
 
 func Run(ctx context.Context, args []string, out io.Writer) error {

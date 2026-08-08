@@ -30,9 +30,34 @@ func TestListAndInspectRendering(t *testing.T) {
 		t.Fatalf("%#v %v", app, err)
 	}
 }
-func TestDoctorDoesNotClaimUnavailableLiveChecks(t *testing.T) {
-	report := Doctor(daemon.Paths{Socket: t.TempDir() + "/missing"}, config.Defaults())
-	if !strings.Contains(report, "live checks not claimed") {
-		t.Fatalf("doctor = %q", report)
+func TestDoctorUsesInjectedProbe(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "unavailable", err: context.DeadlineExceeded, want: "live checks not claimed"},
+		{name: "reachable", want: "Herdr API: reachable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			called := ""
+			report := doctor(daemon.Paths{Socket: t.TempDir() + "/missing"}, config.Defaults(), "/isolated/herdr.sock", func(socket string) error {
+				called = socket
+				return test.err
+			})
+			if called != "/isolated/herdr.sock" {
+				t.Fatalf("probe socket = %q", called)
+			}
+			if !strings.Contains(report, test.want) {
+				t.Fatalf("doctor = %q", report)
+			}
+		})
+	}
+}
+
+func TestHerdrSocketHonorsEnvironmentOverride(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", "/isolated/herdr.sock")
+	if socket := herdrSocket(); socket != "/isolated/herdr.sock" {
+		t.Fatalf("socket = %q", socket)
 	}
 }

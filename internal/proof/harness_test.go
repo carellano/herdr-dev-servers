@@ -43,12 +43,12 @@ func TestSelectControlled(t *testing.T) {
 
 func TestCaptureMetadataAndTransitions(t *testing.T) {
 	captures := []MetadataCapture{
-		{WorkspaceID: "other", Values: map[string]string{"ports": "wrong"}},
-		{WorkspaceID: "w", Values: map[string]string{"ports": "initial"}},
-		{WorkspaceID: "w", Values: map[string]string{"ports": "update"}},
-		{WorkspaceID: "w", Values: map[string]string{"ports": ""}},
+		{WorkspaceID: "other", Values: map[string]string{"apps": "wrong"}},
+		{WorkspaceID: "w", Values: map[string]string{"apps": "initial"}},
+		{WorkspaceID: "w", Values: map[string]string{"apps": "update"}},
+		{WorkspaceID: "w", Values: map[string]string{"apps": ""}},
 	}
-	if err := MatchMetadata(captures, "w", "ports", []string{"initial", "update", ""}); err != nil {
+	if err := MatchMetadata(captures, "w", "apps", []string{"initial", "update", ""}); err != nil {
 		t.Fatal(err)
 	}
 	base := model.Snapshot{Applications: []model.Application{{ID: "one"}}}

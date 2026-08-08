@@ -2,6 +2,7 @@ package herdr
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -46,11 +47,26 @@ func (t JSONLTransport) Call(ctx context.Context, id, method string, params, res
 		return err
 	}
 	defer conn.Close()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
 	if err := json.NewEncoder(conn).Encode(request{ID: id, Method: method, Params: params}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("write Herdr request: %w", err)
 	}
 	reply, err := readResponse(bufio.NewReader(conn))
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	if reply.ID != id {
@@ -175,6 +191,48 @@ func (t JSONLTransport) Snapshot(ctx context.Context, id string) (SnapshotRespon
 	var result SnapshotResponse
 	return result, t.Call(ctx, id, "session.snapshot", map[string]any{}, &result)
 }
+
+func (t JSONLTransport) FocusPane(ctx context.Context, id, paneID string) error {
+	if paneID == "" {
+		return fmt.Errorf("pane ID is required")
+	}
+	return t.Call(ctx, id, "pane.focus", PaneTarget{PaneID: paneID}, nil)
+}
+
+func (t JSONLTransport) FocusWorkspace(ctx context.Context, id, workspaceID string) error {
+	if workspaceID == "" {
+		return fmt.Errorf("workspace ID is required")
+	}
+	return t.Call(ctx, id, "workspace.focus", WorkspaceTarget{WorkspaceID: workspaceID}, nil)
+}
+
+func (t JSONLTransport) FocusTab(ctx context.Context, id, tabID string) error {
+	if tabID == "" {
+		return fmt.Errorf("tab ID is required")
+	}
+	return t.Call(ctx, id, "tab.focus", TabTarget{TabID: tabID}, nil)
+}
+
+func (t JSONLTransport) CurrentFocus(ctx context.Context, id string) (FocusSnapshotResponse, error) {
+	var result SnapshotResponse
+	if err := t.Call(ctx, id, "session.snapshot", map[string]any{}, &result); err != nil {
+		return FocusSnapshotResponse{}, err
+	}
+	return parseFocusSnapshot(result.Snapshot)
+}
+
+func parseFocusSnapshot(snapshot json.RawMessage) (FocusSnapshotResponse, error) {
+	snapshot = bytes.TrimSpace(snapshot)
+	if len(snapshot) == 0 || bytes.Equal(snapshot, []byte("null")) {
+		return FocusSnapshotResponse{}, fmt.Errorf("%w: focus snapshot is absent", ErrMalformedEnvelope)
+	}
+	var focus FocusSnapshotResponse
+	if err := json.Unmarshal(snapshot, &focus); err != nil {
+		return FocusSnapshotResponse{}, fmt.Errorf("%w: decode focus snapshot: %v", ErrMalformedEnvelope, err)
+	}
+	return focus, nil
+}
+
 func (t JSONLTransport) ProcessInfo(ctx context.Context, id, paneID string) (ProcessInfoResponse, error) {
 	var result struct {
 		ProcessInfo ProcessInfoResponse `json:"process_info"`

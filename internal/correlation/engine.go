@@ -3,7 +3,9 @@ package correlation
 
 import (
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/carellano/herdr-apps/internal/discovery"
@@ -58,7 +60,8 @@ func Build(input Input) Result {
 		if !exists {
 			process = discovery.Process{PID: listener.PID, StartTime: "unavailable"}
 		}
-		identity := LogicalIdentityWithAncestry(process, input.Processes)
+		// Listener snapshots use only their own process record; revalidation has the same evidence.
+		identity := LogicalIdentity(process)
 		groupKey := fmt.Sprintf("%s:%d:%s", identity.Key, identity.PID, identity.StartTime)
 		app := groups[groupKey]
 		if app == nil {
@@ -91,12 +94,38 @@ func Build(input Input) Result {
 }
 
 func associate(app *model.Application, process discovery.Process, panes []PaneEvidence, observedAt time.Time) {
-	var matches []PaneEvidence
-	for _, pane := range panes {
-		if pane.PID == app.Identity.PID || process.ParentPID > 0 && pane.PID == process.ParentPID || pane.PID == 0 && cwdMatches(process.CWD, pane.CWD) {
-			matches = append(matches, pane)
-		}
+	strong := uniquePaneMatches(panes, func(pane PaneEvidence) bool {
+		return pane.PID == app.Identity.PID || process.ParentPID > 0 && pane.PID == process.ParentPID
+	})
+	if len(strong) > 0 {
+		setAssociation(app, strong, observedAt)
+		return
 	}
+
+	cwd := uniquePaneMatches(panes, func(pane PaneEvidence) bool {
+		return pane.PID == 0 && cwdMatches(process.CWD, pane.CWD)
+	})
+	setAssociation(app, cwd, observedAt)
+}
+
+func uniquePaneMatches(panes []PaneEvidence, matches func(PaneEvidence) bool) []PaneEvidence {
+	seen := make(map[string]struct{})
+	var unique []PaneEvidence
+	for _, pane := range panes {
+		if !matches(pane) {
+			continue
+		}
+		identity := pane.WorkspaceID + "\x00" + pane.TabID + "\x00" + pane.PaneID
+		if _, exists := seen[identity]; exists {
+			continue
+		}
+		seen[identity] = struct{}{}
+		unique = append(unique, pane)
+	}
+	return unique
+}
+
+func setAssociation(app *model.Application, matches []PaneEvidence, observedAt time.Time) {
 	if len(matches) == 1 {
 		pane := matches[0]
 		app.Association = model.Association{WorkspaceID: pane.WorkspaceID, WorkspaceLabel: pane.WorkspaceLabel, TabID: pane.TabID, TabLabel: pane.TabLabel, PaneID: pane.PaneID, PaneLabel: pane.PaneLabel, Confidence: model.ConfidenceHigh}
@@ -114,10 +143,14 @@ func cwdMatches(processCWD, paneCWD string) bool {
 }
 
 func defaultURL(address string, port int) string {
-	if address == "127.0.0.1" || address == "::1" || address == "localhost" {
-		return fmt.Sprintf("http://%s:%d", address, port)
+	switch address {
+	case "*", "0.0.0.0", "::":
+		address = "localhost"
+	case "127.0.0.1", "::1", "localhost":
+	default:
+		return ""
 	}
-	return ""
+	return "http://" + net.JoinHostPort(address, strconv.Itoa(port))
 }
 
 func sortApplications(applications []model.Application) {

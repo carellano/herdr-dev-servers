@@ -18,7 +18,7 @@ func TestDurableDarwinRunner(t *testing.T) {
 		{"full sequence", func(*fakeDarwin) {}, nil},
 		{"nil readiness times out", func(f *fakeDarwin) { f.polls = []model.Snapshot{{}} }, context.DeadlineExceeded},
 		{"missing controlled app", func(f *fakeDarwin) { f.polls = []model.Snapshot{{Applications: []model.Application{{ID: "other"}}}} }, ErrEvidence},
-		{"metadata mismatch", func(f *fakeDarwin) { f.metadata[1].Values["ports"] = "wrong" }, ErrEvidence},
+		{"metadata mismatch", func(f *fakeDarwin) { f.metadata[1].Values["apps"] = "wrong" }, ErrEvidence},
 		{"non increasing revisions", func(f *fakeDarwin) { f.events[0].Revision = 1 }, ErrEvidence},
 		{"event failure", func(f *fakeDarwin) { f.eventErr = errors.New("event failed") }, fakesError("event failed")},
 		{"cleanup failure", func(f *fakeDarwin) { f.cleanupErr = errors.New("cleanup failed") }, fakesError("cleanup failed")},
@@ -169,7 +169,7 @@ func (e fakesError) Is(target error) bool { return target != nil && e.Error() ==
 
 func runnerConfig() LiveConfig {
 	c := controlled()
-	return LiveConfig{Invoke: true, FakeHerdr: true, TempRoot: "/tmp/proof", FakeHerdrSocket: "/tmp/proof/fake.sock", PluginSocket: "/tmp/proof/plugin.sock", Control: c, Replacement: Control{Endpoint: c.Endpoint, PID: 102, WorkspaceID: c.WorkspaceID, TabID: c.TabID, PaneID: c.PaneID}, ParentPID: 100, PollTimeout: time.Millisecond, EventTimeout: time.Millisecond, MetadataKey: "ports", MetadataValues: []string{"initial", "update", ""}}
+	return LiveConfig{Invoke: true, FakeHerdr: true, TempRoot: "/tmp/proof", FakeHerdrSocket: "/tmp/proof/fake.sock", PluginSocket: "/tmp/proof/plugin.sock", Control: c, Replacement: Control{Endpoint: c.Endpoint, PID: 102, WorkspaceID: c.WorkspaceID, TabID: c.TabID, PaneID: c.PaneID}, ParentPID: 100, PollTimeout: time.Millisecond, EventTimeout: time.Millisecond, MetadataKey: "apps", MetadataValues: []string{"initial", "update", ""}}
 }
 
 type fakeDarwin struct {
@@ -187,7 +187,7 @@ func newFakeDarwin() *fakeDarwin {
 	c := controlled()
 	r := c
 	r.PID = 102
-	return &fakeDarwin{polls: []model.Snapshot{{}, {Revision: 1, Applications: []model.Application{application(c)}}, {Revision: 3}}, events: []model.Snapshot{{Revision: 2, Applications: []model.Application{application(r)}}, {Revision: 3}}, metadata: []MetadataCapture{{WorkspaceID: c.WorkspaceID, Values: map[string]string{"ports": "initial"}}, {WorkspaceID: c.WorkspaceID, Values: map[string]string{"ports": "update"}}, {WorkspaceID: c.WorkspaceID, Values: map[string]string{"ports": ""}}}}
+	return &fakeDarwin{polls: []model.Snapshot{{}, {Revision: 1, Applications: []model.Application{application(c)}}, {Revision: 3}}, events: []model.Snapshot{{Revision: 2, Applications: []model.Application{application(r)}}, {Revision: 3}}, metadata: []MetadataCapture{{WorkspaceID: c.WorkspaceID, Values: map[string]string{"apps": "initial"}}, {WorkspaceID: c.WorkspaceID, Values: map[string]string{"apps": "update"}}, {WorkspaceID: c.WorkspaceID, Values: map[string]string{"apps": ""}}}}
 }
 
 func (f *fakeDarwin) EnsureStopped(context.Context) error { return nil }

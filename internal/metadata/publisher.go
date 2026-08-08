@@ -18,7 +18,7 @@ const (
 	maxBytes     = 80
 )
 
-// Publication describes whether a metadata client should write the bounded $ports value.
+// Publication describes whether a metadata client should write the bounded $apps value.
 type Publication struct {
 	Value   string
 	Digest  string
@@ -64,29 +64,32 @@ func (e *ReportError) Error() string {
 func (e *ReportError) Unwrap() error { return e.Err }
 
 func (p *Publisher) Prepare(applications []model.Application) Publication {
-	urls := make([]string, 0)
+	ports := make([]int, 0)
 	for _, application := range applications {
 		for _, endpoint := range application.Endpoints {
-			if endpoint.URL != "" {
-				urls = append(urls, endpoint.URL)
+			if endpoint.Port > 0 {
+				ports = append(ports, endpoint.Port)
 			}
 		}
 	}
-	sort.Strings(urls)
-	urls = compact(urls)
+	sort.Ints(ports)
+	values := make([]string, 0, len(ports))
+	for _, port := range ports {
+		value := ":" + strconvItoa(port)
+		if len(values) == 0 || values[len(values)-1] != value {
+			values = append(values, value)
+		}
+	}
 	remaining := 0
-	if len(urls) > maxEndpoints {
-		remaining = len(urls) - maxEndpoints
-		urls = urls[:maxEndpoints]
+	if len(values) > maxEndpoints {
+		remaining = len(values) - maxEndpoints
+		values = values[:maxEndpoints]
 	}
-	value := strings.Join(urls, ", ")
-	if remaining > 0 {
-		value += " +" + strconvItoa(remaining)
-	}
-	for len([]byte(value)) > maxBytes && len(urls) > 0 {
-		urls = urls[:len(urls)-1]
+	value := compactValue(values, remaining)
+	for len([]byte(value)) > maxBytes && len(values) > 0 {
+		values = values[:len(values)-1]
 		remaining++
-		value = strings.Join(urls, ", ") + " +" + strconvItoa(remaining)
+		value = compactValue(values, remaining)
 	}
 	sum := sha256.Sum256([]byte(value))
 	digest := hex.EncodeToString(sum[:])
@@ -95,7 +98,7 @@ func (p *Publisher) Prepare(applications []model.Application) Publication {
 	return Publication{Value: value, Digest: digest, Changed: changed}
 }
 
-// Publish writes stable bounded $ports values, suppressing unchanged workspaces and clearing removals.
+// Publish writes stable bounded $apps values, suppressing unchanged workspaces and clearing removals.
 func (p *Publisher) Publish(ctx context.Context, applications []model.Application, reporter Reporter) error {
 	if reporter == nil {
 		return &ReportError{Err: fmt.Errorf("metadata reporter is unavailable")}
@@ -126,7 +129,7 @@ func (p *Publisher) Publish(ctx context.Context, applications []model.Applicatio
 			continue
 		}
 		value := values[id]
-		if err := reporter.ReportMetadata(ctx, id, "herdr-apps", map[string]*string{"ports": &value}); err != nil {
+		if err := reporter.ReportMetadata(ctx, id, "herdr-apps", map[string]*string{"apps": &value}); err != nil {
 			return &ReportError{WorkspaceID: id, Err: err}
 		}
 	}
@@ -144,14 +147,15 @@ func boundedValue(applications []model.Application) string {
 	return p.Prepare(applications).Value
 }
 
-func compact(values []string) []string {
-	result := values[:0]
-	for _, value := range values {
-		if len(result) == 0 || result[len(result)-1] != value {
-			result = append(result, value)
-		}
+func compactValue(values []string, remaining int) string {
+	value := strings.Join(values, " ")
+	if remaining == 0 {
+		return value
 	}
-	return result
+	if value == "" {
+		return "+" + strconvItoa(remaining)
+	}
+	return value + " +" + strconvItoa(remaining)
 }
 func strconvItoa(value int) string {
 	if value == 0 {

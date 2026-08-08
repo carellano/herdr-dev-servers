@@ -75,7 +75,9 @@ type fakeInspector struct {
 	waitErr  error
 }
 
-func (f fakeInspector) Inspect(int) (model.ProcessIdentity, error)        { return f.identity, f.err }
+func (f fakeInspector) Inspect(context.Context, int) (model.ProcessIdentity, error) {
+	return f.identity, f.err
+}
 func (f fakeInspector) Wait(context.Context, model.ProcessIdentity) error { return f.waitErr }
 
 type signalCall struct {

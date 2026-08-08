@@ -7,7 +7,9 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/carellano/herdr-apps/internal/actions"
 	"github.com/carellano/herdr-apps/internal/herdr"
 	"github.com/carellano/herdr-apps/internal/model"
 )
@@ -16,6 +18,22 @@ type fakeActionExecutor struct {
 	result model.ActionResult
 	err    error
 	calls  int
+}
+
+type ipcProcessInspector struct{ identity model.ProcessIdentity }
+
+func (i ipcProcessInspector) Inspect(context.Context, int) (model.ProcessIdentity, error) {
+	return i.identity, nil
+}
+func (ipcProcessInspector) Wait(context.Context, model.ProcessIdentity) error {
+	return context.DeadlineExceeded
+}
+
+type ipcSignaler struct{ calls int }
+
+func (s *ipcSignaler) SignalPGID(int, actions.Signal) error {
+	s.calls++
+	return nil
 }
 
 func (f *fakeActionExecutor) Execute(_ context.Context, _ model.ActionRequest, _ model.Application) (model.ActionResult, error) {
@@ -35,6 +53,26 @@ func TestServeJSONLDispatchesVerifiedActions(t *testing.T) {
 	}
 	if result := decodeActionResult(t, response); result.Outcome != "exact-pane" {
 		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestServeJSONLRequiresDaemonForceEligibility(t *testing.T) {
+	app := model.Application{ID: "app", Identity: model.ProcessIdentity{PID: 7, StartTime: "one", PGID: 7, Key: "app"}, Association: model.Association{Confidence: model.ConfidenceHigh}}
+	signaler := &ipcSignaler{}
+	executor := actions.NewExecutor(actions.Service{Processes: ipcProcessInspector{identity: app.Identity}, Signaler: signaler, Grace: time.Millisecond})
+	service := &Service{Actions: executor}
+	snapshot := service.Replace(model.Snapshot{Applications: []model.Application{app}})
+	request := func(action string) model.IPCRequest {
+		return model.IPCRequest{Version: IPCVersion, RequestID: action, ObservedRevision: snapshot.Revision, Method: "action", Action: action, Target: app.ID, Identity: app.Identity, Confirmed: true}
+	}
+	if result := decodeActionResult(t, serveAction(t, service, request("kill"))); result.Outcome != "unavailable" || signaler.calls != 0 {
+		t.Fatalf("unapproved KILL result=%#v calls=%d", result, signaler.calls)
+	}
+	if result := decodeActionResult(t, serveAction(t, service, request("terminate"))); !result.ForceEligible || signaler.calls != 1 {
+		t.Fatalf("TERM result=%#v calls=%d", result, signaler.calls)
+	}
+	if result := decodeActionResult(t, serveAction(t, service, request("kill"))); result.Outcome != "kill-sent" || signaler.calls != 2 {
+		t.Fatalf("eligible KILL result=%#v calls=%d", result, signaler.calls)
 	}
 }
 

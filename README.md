@@ -5,14 +5,14 @@
 ## Quick path
 
 1. Build the binary: `go build ./cmd/herdr-apps`.
-2. With a compatible Herdr server available, start `herdr-apps daemon` in one terminal.
+2. When installed or linked through Herdr, startup and `pane.created` hooks automatically keep the daemon available; the daemon also reconciles independently every configured scan interval (five seconds by default).
 3. Use `herdr-apps list`, `herdr-apps inspect <port>`, `herdr-apps doctor`, or `herdr-apps tui` in another terminal.
 
 The daemon owns current application revisions. CLI and TUI clients only query that local authority.
 
 ## Install and manifest use
 
-Requirements: Go 1.24+, Herdr 0.8+ / protocol 19, and macOS or Linux. The manifest is [`herdr-plugin.toml`](herdr-plugin.toml); it declares the `list` workspace action and `tui` popup command.
+Requirements: Go 1.24+, Herdr 0.8+ / protocol 19, and macOS or Linux. The manifest is [`herdr-plugin.toml`](herdr-plugin.toml); it builds `./herdr-apps`, starts it through one-shot startup and pane-created hooks, and declares relative action and pane commands. No LaunchAgent or systemd unit is required.
 
 For local validation, keep the manifest in this checkout and invoke the binary directly. Do **not** copy it into a user or system plugin directory unless the host's installation process has been explicitly approved. This project never persistently registers itself.
 
@@ -26,8 +26,10 @@ go run ./cmd/herdr-apps doctor
 
 | Command | Purpose |
 |---|---|
-| `herdr-apps daemon` | Starts the local authority, reconciles Herdr and listener observations, and publishes bounded workspace `$ports` metadata. |
+| `herdr-apps daemon` | Starts the local authority, reconciles Herdr and listener observations, and publishes bounded workspace `$apps` metadata as compact `:port` entries. |
+| `herdr-apps ensure-watch` | Checks the local IPC authority and, when unavailable, starts `daemon` and waits briefly for readiness. Herdr invokes this one-shot command automatically. |
 | `herdr-apps list [--json]` | Lists the latest daemon snapshot; external listeners remain hidden unless the model explicitly includes them. |
+| `herdr-apps open` | Opens the configured `apps` popup through Herdr. The visible `carellano.apps.apps` workspace action (bindable to `prefix+a`) invokes it. |
 | `herdr-apps inspect <port>` | Shows evidence for the application that owns a listed port. |
 | `herdr-apps doctor` | Reports local daemon availability and Herdr compatibility/reachability guidance without claiming unavailable live validation. |
 | `herdr-apps tui` | Opens the interactive client against the existing daemon. |
@@ -46,9 +48,9 @@ TERM and force-kill are unavailable without high-confidence, owned process evide
 | Symptom | Check |
 |---|---|
 | `doctor` reports Herdr unavailable | Start a compatible Herdr server or point `HERDR_SOCKET_PATH` at an isolated server socket. |
-| `list` cannot reach the daemon | Start `herdr-apps daemon`; use the same isolated `HERDR_PLUGIN_STATE_DIR` for both processes when set. |
+| `list` cannot reach the daemon | Run `herdr-apps ensure-watch` or start `herdr-apps daemon` for direct local validation; use the same isolated `HERDR_PLUGIN_STATE_DIR` for both processes when set. |
 | No application is listed | Confirm a supported TCP listener and current Herdr pane/process evidence; unavailable or ambiguous evidence is shown as such rather than guessed. |
-| `$ports` is absent or unchanged | Metadata is bounded, stable-sorted, and suppressed when its digest has not changed; inspect daemon/Herdr diagnostics first. |
+| `$apps` is absent or unchanged | Metadata is bounded, stable-sorted, and suppressed when its digest has not changed; inspect daemon/Herdr diagnostics first. |
 
 ## Clean rollback and uninstall
 

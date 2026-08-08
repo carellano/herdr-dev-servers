@@ -13,7 +13,7 @@ func (s Service) Terminate(ctx context.Context, application model.Application, c
 	if !confirmed {
 		return Result{Outcome: OutcomeUnavailable, Warning: "termination requires confirmation"}
 	}
-	if err := s.validateSignalTarget(application); err != nil {
+	if err := s.validateSignalTarget(ctx, application); err != nil {
 		return Result{Outcome: OutcomeUnavailable, Warning: err.Error()}
 	}
 	if err := s.Signaler.SignalPGID(application.Identity.PGID, SignalTERM); err != nil {
@@ -32,11 +32,11 @@ func (s Service) Terminate(ctx context.Context, application model.Application, c
 }
 
 // ForceKill is deliberately separate from Terminate and revalidates before its own signal.
-func (s Service) ForceKill(_ context.Context, application model.Application, confirmed bool) Result {
+func (s Service) ForceKill(ctx context.Context, application model.Application, confirmed bool) Result {
 	if !confirmed {
 		return Result{Outcome: OutcomeUnavailable, Warning: "force kill requires separate confirmation"}
 	}
-	if err := s.validateSignalTarget(application); err != nil {
+	if err := s.validateSignalTarget(ctx, application); err != nil {
 		return Result{Outcome: OutcomeUnavailable, Warning: err.Error()}
 	}
 	if err := s.Signaler.SignalPGID(application.Identity.PGID, SignalKILL); err != nil {
@@ -45,7 +45,7 @@ func (s Service) ForceKill(_ context.Context, application model.Application, con
 	return Result{Outcome: OutcomeKillSent}
 }
 
-func (s Service) validateSignalTarget(application model.Application) error {
+func (s Service) validateSignalTarget(ctx context.Context, application model.Application) error {
 	identity := application.Identity
 	if application.External || application.Association.Stale || application.Association.Confidence != model.ConfidenceHigh || identity.PID <= 0 || identity.PGID <= 0 || identity.StartTime == "" || identity.Key == "" {
 		return fmt.Errorf("process identity is not high-confidence owned evidence")
@@ -53,7 +53,7 @@ func (s Service) validateSignalTarget(application model.Application) error {
 	if s.Processes == nil || s.Signaler == nil {
 		return fmt.Errorf("process signaling is unavailable")
 	}
-	current, err := s.Processes.Inspect(identity.PID)
+	current, err := s.Processes.Inspect(ctx, identity.PID)
 	if err != nil {
 		return fmt.Errorf("process could not be revalidated: %w", err)
 	}

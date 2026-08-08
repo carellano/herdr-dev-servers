@@ -132,7 +132,7 @@ func TestProtocolRequestShapes(t *testing.T) {
 	}{
 		{request{ID: "1", Method: "session.snapshot", Params: map[string]any{}}, `{"id":"1","method":"session.snapshot","params":{}}`},
 		{request{ID: "2", Method: "pane.process_info", Params: ProcessInfoRequest{}}, `{"id":"2","method":"pane.process_info","params":{}}`},
-		{request{ID: "3", Method: "workspace.report_metadata", Params: MetadataRequest{WorkspaceID: "w", Source: "herdr-apps", Tokens: map[string]*string{"ports": nil}}}, `{"id":"3","method":"workspace.report_metadata","params":{"workspace_id":"w","source":"herdr-apps","tokens":{"ports":null}}}`},
+		{request{ID: "3", Method: "workspace.report_metadata", Params: MetadataRequest{WorkspaceID: "w", Source: "herdr-apps", Tokens: map[string]*string{"apps": nil}}}, `{"id":"3","method":"workspace.report_metadata","params":{"workspace_id":"w","source":"herdr-apps","tokens":{"apps":null}}}`},
 	} {
 		got, _ := json.Marshal(tt.value)
 		if string(got) != tt.want {

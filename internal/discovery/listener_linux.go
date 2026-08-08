@@ -82,15 +82,7 @@ func readLinuxProcess(pid int) (Process, error) {
 	if err != nil {
 		return Process{}, err
 	}
-	fields := strings.Fields(string(stat))
-	if len(fields) < 22 {
-		return Process{}, fmt.Errorf("parse /proc/%d/stat: incomplete record", pid)
-	}
-	parent, err := strconv.Atoi(fields[3])
-	if err != nil {
-		return Process{}, err
-	}
-	pgid, err := strconv.Atoi(fields[4])
+	process, err := ParseLinuxProcessStat(pid, stat)
 	if err != nil {
 		return Process{}, err
 	}
@@ -104,5 +96,6 @@ func readLinuxProcess(pid int) (Process, error) {
 	}
 	cmdline, _ := os.ReadFile(filepath.Join(base, "cmdline"))
 	args := strings.FieldsFunc(string(cmdline), func(r rune) bool { return r == 0 })
-	return Process{PID: pid, ParentPID: parent, PGID: pgid, StartTime: fields[21], CWD: cwd, Executable: executable, Args: args}, nil
+	process.CWD, process.Executable, process.Args = cwd, executable, args
+	return process, nil
 }

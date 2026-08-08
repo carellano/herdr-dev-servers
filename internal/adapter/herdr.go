@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/carellano/herdr-apps/internal/actions"
+	"github.com/carellano/herdr-apps/internal/config"
 	"github.com/carellano/herdr-apps/internal/daemon"
 	"github.com/carellano/herdr-apps/internal/discovery"
 	"github.com/carellano/herdr-apps/internal/herdr"
@@ -101,12 +103,15 @@ type Factory struct {
 	Snapshot    func(context.Context) (json.RawMessage, error)
 	Events      func(context.Context) (<-chan herdr.Event, error)
 	Reporter    metadata.Reporter
+	Focus       actions.FocusClient
+	Interval    time.Duration
 }
 
 func NewFactory(socket string) Factory {
 	transport := herdr.JSONLTransport{Socket: socket}
 	return Factory{
 		Scanner: discovery.NewSystemScanner(), Processes: discovery.NewSystemProcessTable(),
+		Interval: config.Defaults().Interval(),
 		ProcessInfo: func(ctx context.Context, pane string) (herdr.ProcessInfoResponse, error) {
 			return transport.ProcessInfo(ctx, "herdr-apps-process", pane)
 		},
@@ -118,6 +123,7 @@ func NewFactory(socket string) Factory {
 			return transport.Subscribe(ctx, "herdr-apps-events", topologySubscriptions())
 		},
 		Reporter: metadata.HerdrReporter{Transport: transport},
+		Focus:    newFocusClient(transport, defaultFocusTimeout),
 	}
 }
 
@@ -144,7 +150,11 @@ func DefaultSocket() string {
 // Runtime composes one Service for reconciliation and IPC, with real Herdr and OS adapters.
 func (f Factory) Runtime(service *daemon.Service) daemon.Runtime {
 	publisher := &metadata.Publisher{}
-	return daemon.Runtime{Service: service, Backoff: time.Second, Subscribe: func(ctx context.Context) (<-chan struct{}, error) {
+	interval := f.Interval
+	if interval <= 0 {
+		interval = config.Defaults().Interval()
+	}
+	return daemon.Runtime{Service: service, Interval: interval, Backoff: time.Second, Subscribe: func(ctx context.Context) (<-chan struct{}, error) {
 		events, err := f.Events(ctx)
 		if err != nil {
 			return nil, err

@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Listener is a TCP listener observation; it deliberately contains no inferred ownership.
@@ -44,6 +45,35 @@ type ProcessTable interface {
 	Lookup(context.Context, int) (Process, error)
 }
 
+// ParseLinuxProcessStat extracts only stable process identity fields from /proc/<pid>/stat.
+func ParseLinuxProcessStat(pid int, data []byte) (Process, error) {
+	record := string(data)
+	open, close := strings.IndexByte(record, '('), strings.LastIndexByte(record, ')')
+	if pid <= 0 || open <= 0 || close <= open {
+		return Process{}, fmt.Errorf("parse /proc/%d/stat: malformed record", pid)
+	}
+	parsedPID, err := strconv.Atoi(strings.TrimSpace(record[:open]))
+	if err != nil || parsedPID != pid {
+		return Process{}, fmt.Errorf("parse /proc/%d/stat: PID mismatch", pid)
+	}
+	fields := strings.Fields(record[close+1:])
+	if len(fields) < 20 {
+		return Process{}, fmt.Errorf("parse /proc/%d/stat: incomplete record", pid)
+	}
+	parent, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return Process{}, fmt.Errorf("parse /proc/%d/stat: parent PID: %w", pid, err)
+	}
+	pgid, err := strconv.Atoi(fields[2])
+	if err != nil || pgid <= 0 {
+		return Process{}, fmt.Errorf("parse /proc/%d/stat: process group", pid)
+	}
+	if _, err := strconv.ParseUint(fields[19], 10, 64); err != nil {
+		return Process{}, fmt.Errorf("parse /proc/%d/stat: start time: %w", pid, err)
+	}
+	return Process{PID: pid, ParentPID: parent, PGID: pgid, StartTime: fields[19]}, nil
+}
+
 // Runner is the narrow fixed-argv command boundary used by platform adapters.
 type Runner interface {
 	Run(context.Context, ...string) ([]byte, error)
@@ -61,22 +91,40 @@ func (t DarwinProcessTable) Lookup(ctx context.Context, pid int) (Process, error
 	if t.Runner == nil {
 		return Process{}, fmt.Errorf("Darwin process table has no command runner")
 	}
-	out, err := t.Runner.Run(ctx, "ps", "-o", "pid=,ppid=,pgid=,comm=,args=", "-p", strconv.Itoa(pid))
+	out, err := t.Runner.Run(ctx, "ps", "-o", "pid=,ppid=,pgid=,lstart=,comm=,args=", "-p", strconv.Itoa(pid))
 	if err != nil {
 		return Process{}, fmt.Errorf("read process %d: %w", pid, err)
 	}
-	fields := strings.Fields(strings.TrimSpace(string(out)))
-	if len(fields) < 5 {
-		return Process{}, fmt.Errorf("parse process %d: incomplete ps record", pid)
+	process, err := ParseDarwinProcess(out)
+	if err != nil {
+		return Process{}, fmt.Errorf("parse process %d: %w", pid, err)
+	}
+	if process.PID != pid {
+		return Process{}, fmt.Errorf("parse process %d: PID mismatch %d", pid, process.PID)
+	}
+	return process, nil
+}
+
+// ParseDarwinProcess parses the single unheaded record emitted by Darwin ps.
+// lstart is normalized so discovery and destructive revalidation compare one token.
+func ParseDarwinProcess(data []byte) (Process, error) {
+	fields := strings.Fields(strings.TrimSpace(string(data)))
+	if len(fields) < 10 {
+		return Process{}, fmt.Errorf("incomplete ps record")
 	}
 	values := make([]int, 3)
 	for index := range values {
-		values[index], err = strconv.Atoi(fields[index])
+		value, err := strconv.Atoi(fields[index])
 		if err != nil {
-			return Process{}, fmt.Errorf("parse process %d: %w", pid, err)
+			return Process{}, err
 		}
+		values[index] = value
 	}
-	return Process{PID: values[0], ParentPID: values[1], PGID: values[2], Executable: fields[3], Args: fields[4:]}, nil
+	start := strings.Join(fields[3:8], " ")
+	if _, err := time.Parse("Mon Jan 2 15:04:05 2006", start); err != nil {
+		return Process{}, fmt.Errorf("invalid start time: %w", err)
+	}
+	return Process{PID: values[0], ParentPID: values[1], PGID: values[2], StartTime: start, Executable: fields[8], Args: fields[9:]}, nil
 }
 
 func (s DarwinScanner) Scan(ctx context.Context) ([]Listener, error) {
