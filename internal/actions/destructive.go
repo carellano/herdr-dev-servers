@@ -47,7 +47,7 @@ func (s Service) ForceKill(ctx context.Context, application model.Application, c
 
 func (s Service) validateSignalTarget(ctx context.Context, application model.Application) error {
 	identity := application.Identity
-	if application.External || application.Association.Stale || application.Association.Confidence != model.ConfidenceHigh || identity.PID <= 0 || identity.PGID <= 0 || identity.StartTime == "" || identity.Key == "" {
+	if application.External || application.Association.Stale || application.Association.Confidence != model.ConfidenceHigh || identity.PID <= 0 || identity.PID != identity.PGID || identity.StartTime == "" || identity.Key == "" {
 		return fmt.Errorf("process identity is not high-confidence owned evidence")
 	}
 	if s.Processes == nil || s.Signaler == nil {

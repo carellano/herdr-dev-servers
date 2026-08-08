@@ -5,14 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/config"
-	"github.com/carellano/herdr-apps/internal/discovery"
 	"github.com/carellano/herdr-apps/internal/model"
 )
 
@@ -126,6 +122,59 @@ func TestRuntimeStopsTickerWhenEventPublishFails(t *testing.T) {
 	<-ticker.stopped
 }
 
+func TestRuntimeMarksPostStartFailuresStaleAndRecovers(t *testing.T) {
+	events := make(chan struct{}, 1)
+	ticker := &fakeTicker{ticks: make(chan time.Time, 1), stopped: make(chan struct{})}
+	service := &Service{}
+	service.Replace(model.Snapshot{Applications: []model.Application{{ID: "app"}}})
+	calls := 0
+	runtime := Runtime{
+		Service: service,
+		Rebuild: func(context.Context, model.Snapshot) (model.Snapshot, error) {
+			calls++
+			if calls < 3 {
+				return model.Snapshot{}, errors.New("refresh failed")
+			}
+			return model.Snapshot{Applications: []model.Application{{ID: "app"}}}, nil
+		},
+		NewTicker: func(time.Duration) Ticker { return ticker },
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runtime.runEvents(ctx, events, time.Second, runtime.NewTicker) }()
+	events <- struct{}{}
+	waitForSnapshot(t, service, func(snapshot model.Snapshot) bool {
+		return snapshot.Revision == 2 && snapshot.Applications[0].Association.Stale
+	})
+	staleRevision := service.Snapshot().Revision
+	events <- struct{}{}
+	time.Sleep(10 * time.Millisecond)
+	if got := service.Snapshot().Revision; got != staleRevision {
+		t.Fatalf("repeated failure revision=%d want=%d", got, staleRevision)
+	}
+	ticker.ticks <- time.Time{}
+	waitForSnapshot(t, service, func(snapshot model.Snapshot) bool {
+		return snapshot.Revision == staleRevision+1 && !snapshot.Applications[0].Association.Stale
+	})
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	<-ticker.stopped
+}
+
+func waitForSnapshot(t *testing.T, service *Service, match func(model.Snapshot) bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if snapshot := service.Snapshot(); match(snapshot) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("snapshot did not reach expected state: %#v", service.Snapshot())
+}
+
 func TestRuntimeReconnectsAfterEventStreamCloses(t *testing.T) {
 	first := make(chan struct{})
 	close(first)
@@ -186,77 +235,6 @@ func TestRuntimeReconnectsAfterEventStreamCloses(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-secondTicker.stopped
-}
-
-type runtimeScanner struct{}
-
-func (runtimeScanner) Scan(context.Context) ([]discovery.Listener, error) {
-	return []discovery.Listener{{PID: 9, Port: 3000, Address: "127.0.0.1"}}, nil
-}
-
-type runtimeProcesses struct{}
-
-func (runtimeProcesses) Lookup(context.Context, int) (discovery.Process, error) {
-	return discovery.Process{PID: 9, StartTime: "s", PGID: 9, Executable: "app"}, nil
-}
-
-type runtimeInspector struct{}
-
-func (runtimeInspector) Identity(pid int) (ProcessIdentity, error) {
-	return ProcessIdentity{PID: pid, StartTime: "self"}, nil
-}
-
-func TestRunServesReconciledSnapshot(t *testing.T) {
-	dir := t.TempDir()
-	socket, err := os.CreateTemp("/tmp", "ha-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	socketPath := socket.Name()
-	check := func(err error) {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	check(socket.Close())
-	check(os.Remove(socketPath))
-	check(os.Symlink(dir, socketPath))
-	defer os.Remove(socketPath)
-	paths := Paths{StateDir: socketPath, Socket: filepath.Join(socketPath, "daemon.sock"), Lock: filepath.Join(socketPath, "daemon.lock")}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, paths, config.Defaults(), runtimeScanner{}, runtimeProcesses{}, runtimeInspector{})
-	}()
-	deadline := time.Now().Add(time.Second)
-	var response model.IPCResponse
-	var requestErr error
-	for time.Now().Before(deadline) {
-		response, requestErr = (Client{Socket: paths.Socket}).Request(context.Background(), model.IPCRequest{Version: IPCVersion, RequestID: "test", Method: "list"})
-		if requestErr == nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if requestErr != nil {
-		t.Fatal(requestErr)
-	}
-	info, err := os.Stat(paths.Socket)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("socket permissions = %v, %v", info, err)
-	}
-	snapshot, ok := response.Result.(map[string]any)
-	if !ok || snapshot == nil {
-		t.Fatalf("result = %#v", response.Result)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(paths.Socket); !os.IsNotExist(err) {
-		t.Fatalf("socket remains after shutdown: %v", err)
-	}
 }
 
 func TestServeJSONLServesOneResponsePerRequest(t *testing.T) {

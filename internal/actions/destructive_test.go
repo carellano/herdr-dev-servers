@@ -25,6 +25,7 @@ func TestTerminateRevalidatesOwnedProcessGroupBeforeSignaling(t *testing.T) {
 		{name: "external identity", app: model.Application{Identity: identity, External: true, Association: model.Association{Confidence: model.ConfidenceHigh}}, inspected: identity, confirmed: true},
 		{name: "stale identity", app: model.Application{Identity: identity, Association: model.Association{Confidence: model.ConfidenceHigh, Stale: true}}, inspected: identity, confirmed: true},
 		{name: "ambiguous identity", app: model.Application{Identity: identity, Association: model.Association{Confidence: model.ConfidencePartial}}, inspected: identity, confirmed: true},
+		{name: "listener is not process group leader", app: testApp(model.ProcessIdentity{PID: identity.PID, StartTime: identity.StartTime, PGID: 99, Key: identity.Key}), inspected: identity, confirmed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			signaler := &fakeSignaler{}

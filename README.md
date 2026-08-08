@@ -28,20 +28,24 @@ go run ./cmd/herdr-apps doctor
 |---|---|
 | `herdr-apps daemon` | Starts the local authority, reconciles Herdr and listener observations, and publishes bounded workspace `$apps` metadata as compact `:port` entries. |
 | `herdr-apps ensure-watch` | Checks the local IPC authority and, when unavailable, starts `daemon` and waits briefly for readiness. Herdr invokes this one-shot command automatically. |
-| `herdr-apps list [--json]` | Lists the latest daemon snapshot; external listeners remain hidden unless the model explicitly includes them. |
+| `herdr-apps list [--json]` | Lists the latest daemon snapshot, including external listeners for diagnostics. |
 | `herdr-apps open` | Opens the configured `apps` popup through Herdr. The visible `carellano.apps.apps` workspace action (bindable to `prefix+a`) invokes it. |
 | `herdr-apps inspect <port>` | Shows evidence for the application that owns a listed port. |
-| `herdr-apps doctor` | Reports local daemon availability and Herdr compatibility/reachability guidance without claiming unavailable live validation. |
+| `herdr-apps doctor` | Reports local daemon availability and Herdr socket reachability only; it does not check API compatibility. |
 | `herdr-apps tui` | Opens the interactive client against the existing daemon. |
 | `herdr-apps help` | Prints command usage. |
 
 Set `HERDR_SOCKET_PATH` only when connecting the daemon to an isolated or alternate Herdr socket. Set `HERDR_PLUGIN_STATE_DIR` only when isolating plugin socket and lock state, such as in tests.
 
+## Configuration
+
+`config.toml` supports only these active keys: `scan_interval_seconds`, `ignored_ports`, `opener`, and `clipboard`. Ignored listener ports are excluded before correlation and never reach the daemon snapshot, CLI, or TUI. The TUI hides external listeners; `list` and `list --json` retain them for diagnostics.
+
 ## Action safety
 
 Actions are daemon-validated and resolve against the latest revision. Open and copy use fixed arguments; unsafe URLs, credentials, control bytes, and unavailable tools are refused. Focus reports either exact pane success, an explicit workspace/tab fallback warning, or unavailable.
 
-TERM and force-kill are unavailable without high-confidence, owned process evidence and explicit confirmation. Before signaling, the daemon revalidates PID, start time, process group, and identity; a changed or missing process receives no signal. Force-kill additionally requires a bounded grace expiry and a second confirmation/revalidation.
+TERM and force-kill are unavailable without high-confidence, owned process evidence and explicit confirmation. Before signaling, the daemon revalidates PID, start time, identity, and that the listener itself leads its process group; a changed, missing, or shared-group process receives no signal. Force-kill additionally requires a bounded grace expiry and a second confirmation/revalidation.
 
 ## Troubleshooting
 

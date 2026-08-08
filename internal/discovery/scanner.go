@@ -221,6 +221,28 @@ func ParseLinuxTCPListeners(data []byte, inodePID map[string]int) ([]Listener, e
 	return listeners, nil
 }
 
+// MergeLinuxTCPListeners parses available IPv4 and IPv6 proc tables, deduplicating shared sockets.
+func MergeLinuxTCPListeners(tcp, tcp6 []byte, inodePID map[string]int) ([]Listener, error) {
+	var result []Listener
+	seen := map[Listener]bool{}
+	for _, data := range [][]byte{tcp, tcp6} {
+		if len(data) == 0 {
+			continue
+		}
+		listeners, err := ParseLinuxTCPListeners(data, inodePID)
+		if err != nil {
+			return nil, err
+		}
+		for _, listener := range listeners {
+			if !seen[listener] {
+				seen[listener] = true
+				result = append(result, listener)
+			}
+		}
+	}
+	return result, nil
+}
+
 func splitListenerAddress(value string) (string, int, bool) {
 	host, portText, err := net.SplitHostPort(value)
 	if err != nil {
@@ -232,12 +254,23 @@ func splitListenerAddress(value string) (string, int, bool) {
 
 func parseProcAddress(value string) (string, int, bool) {
 	parts := strings.Split(value, ":")
-	if len(parts) != 2 || len(parts[0]) != 8 {
+	if len(parts) != 2 || (len(parts[0]) != 8 && len(parts[0]) != 32) {
 		return "", 0, false
 	}
 	port64, err := strconv.ParseUint(parts[1], 16, 16)
 	if err != nil {
 		return "", 0, false
+	}
+	if len(parts[0]) == 32 {
+		bytes := make(net.IP, net.IPv6len)
+		for index := range bytes {
+			part, err := strconv.ParseUint(parts[0][index*2:index*2+2], 16, 8)
+			if err != nil {
+				return "", 0, false
+			}
+			bytes[index^3] = byte(part)
+		}
+		return bytes.String(), int(port64), true
 	}
 	bytes := make(net.IP, 4)
 	for index := range bytes {

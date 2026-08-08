@@ -97,6 +97,7 @@ func PaneProcesses(ctx context.Context, panes []daemon.Pane, lookup func(context
 }
 
 type Factory struct {
+	Ignored     func(int) bool
 	Scanner     discovery.Scanner
 	Processes   discovery.ProcessTable
 	ProcessInfo func(context.Context, string) (herdr.ProcessInfoResponse, error)
@@ -195,6 +196,7 @@ func (f Factory) Runtime(service *daemon.Service) daemon.Runtime {
 				listeners = mergeListeners(listeners, recovered)
 			}
 		}
+		listeners = filterListeners(listeners, f.Ignored)
 		processes := map[int]discovery.Process{}
 		var processErr error
 		for _, listener := range listeners {
@@ -236,4 +238,17 @@ func mergeListeners(global, targeted []discovery.Listener) []discovery.Listener 
 		}
 	}
 	return merged
+}
+
+func filterListeners(listeners []discovery.Listener, ignored func(int) bool) []discovery.Listener {
+	if ignored == nil {
+		return listeners
+	}
+	filtered := make([]discovery.Listener, 0, len(listeners))
+	for _, listener := range listeners {
+		if !ignored(listener.Port) {
+			filtered = append(filtered, listener)
+		}
+	}
+	return filtered
 }

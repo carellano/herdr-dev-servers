@@ -42,7 +42,8 @@ func (s *Service) ServeJSONL(reader io.Reader, writer io.Writer) error {
 					response.Error = &model.IPCError{Code: "not_found", Message: "application is unavailable"}
 				}
 			} else {
-				response = s.executeAction(context.Background(), request, snapshot, response)
+				result, revision, actionErr := s.ExecuteAction(context.Background(), request)
+				response.Revision, response.Error, response.Result = revision, actionErr, result
 			}
 		}
 		if err := writeResponse(writer, response); err != nil {
@@ -50,39 +51,6 @@ func (s *Service) ServeJSONL(reader io.Reader, writer io.Writer) error {
 		}
 	}
 	return scanner.Err()
-}
-
-func (s *Service) executeAction(ctx context.Context, request model.IPCRequest, snapshot model.Snapshot, response model.IPCResponse) model.IPCResponse {
-	if !supportedAction(request.Action) {
-		response.Error = &model.IPCError{Code: "unsupported_action", Message: "action is unavailable"}
-		return response
-	}
-	if request.ObservedRevision != snapshot.Revision {
-		response.Error = &model.IPCError{Code: "stale_revision", Message: "refresh applications before requesting an action"}
-		return response
-	}
-	var application *model.Application
-	for i := range snapshot.Applications {
-		if snapshot.Applications[i].ID == request.Target {
-			application = &snapshot.Applications[i]
-			break
-		}
-	}
-	if application == nil || application.Identity != request.Identity {
-		response.Error = &model.IPCError{Code: "invalid_target", Message: "application identity changed; refresh before requesting an action"}
-		return response
-	}
-	if s.Actions == nil {
-		response.Error = &model.IPCError{Code: "action_unavailable", Message: "daemon action executor is unavailable"}
-		return response
-	}
-	result, err := s.Actions.Execute(ctx, model.ActionRequest{Action: request.Action, Confirmed: request.Confirmed}, *application)
-	if err != nil {
-		response.Error = actionError(err)
-		return response
-	}
-	response.Result = result
-	return response
 }
 
 func supportedAction(action string) bool {

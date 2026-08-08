@@ -14,6 +14,7 @@ import (
 // LinuxScanner is a typed seam for /proc collection. Inode ownership must be supplied by a process adapter.
 type LinuxScanner struct {
 	ReadTCP  func() ([]byte, error)
+	ReadTCP6 func() ([]byte, error)
 	InodePID func() (map[string]int, error)
 }
 
@@ -21,20 +22,25 @@ func (s LinuxScanner) Scan(context.Context) ([]Listener, error) {
 	if s.ReadTCP == nil || s.InodePID == nil {
 		return nil, fmt.Errorf("Linux scanner is not configured")
 	}
-	tcp, err := s.ReadTCP()
-	if err != nil {
-		return nil, err
+	tcp, tcpErr := s.ReadTCP()
+	var tcp6 []byte
+	var tcp6Err error
+	if s.ReadTCP6 != nil {
+		tcp6, tcp6Err = s.ReadTCP6()
+	}
+	if tcpErr != nil && tcp6Err != nil {
+		return nil, fmt.Errorf("read Linux TCP tables: tcp: %v; tcp6: %v", tcpErr, tcp6Err)
 	}
 	inodes, err := s.InodePID()
 	if err != nil {
 		return nil, err
 	}
-	return ParseLinuxTCPListeners(tcp, inodes)
+	return MergeLinuxTCPListeners(tcp, tcp6, inodes)
 }
 
 // NewSystemScanner returns the supported Linux /proc listener adapter.
 func NewSystemScanner() Scanner {
-	return LinuxScanner{ReadTCP: func() ([]byte, error) { return os.ReadFile("/proc/net/tcp") }, InodePID: inodePID}
+	return LinuxScanner{ReadTCP: func() ([]byte, error) { return os.ReadFile("/proc/net/tcp") }, ReadTCP6: func() ([]byte, error) { return os.ReadFile("/proc/net/tcp6") }, InodePID: inodePID}
 }
 
 // LinuxProcessTable is a typed seam for /proc process records.

@@ -20,6 +20,14 @@ type fakeActionExecutor struct {
 	calls  int
 }
 
+type blockingActionExecutor struct{ started, release chan struct{} }
+
+func (e blockingActionExecutor) Execute(context.Context, model.ActionRequest, model.Application) (model.ActionResult, error) {
+	close(e.started)
+	<-e.release
+	return model.ActionResult{Outcome: "exact-pane"}, nil
+}
+
 type ipcProcessInspector struct{ identity model.ProcessIdentity }
 
 func (i ipcProcessInspector) Inspect(context.Context, int) (model.ProcessIdentity, error) {
@@ -76,6 +84,18 @@ func TestServeJSONLRequiresDaemonForceEligibility(t *testing.T) {
 	}
 }
 
+func TestServeJSONLRefusesActionsAfterRuntimeStaleness(t *testing.T) {
+	app := model.Application{ID: "app", Identity: model.ProcessIdentity{PID: 7, StartTime: "one", PGID: 7, Key: "app"}, Association: model.Association{Confidence: model.ConfidenceHigh}}
+	signaler := &ipcSignaler{}
+	service := &Service{Actions: actions.NewExecutor(actions.Service{Processes: ipcProcessInspector{identity: app.Identity}, Signaler: signaler})}
+	service.Replace(model.Snapshot{Applications: []model.Application{app}})
+	stale := service.MarkStale()
+	response := serveAction(t, service, model.IPCRequest{Version: IPCVersion, RequestID: "terminate", ObservedRevision: stale.Revision, Method: "action", Action: "terminate", Target: app.ID, Identity: app.Identity, Confirmed: true})
+	if result := decodeActionResult(t, response); result.Outcome != "unavailable" || signaler.calls != 0 {
+		t.Fatalf("result=%#v signals=%d", result, signaler.calls)
+	}
+}
+
 func TestServeJSONLRejectsStaleOrInvalidActionTargets(t *testing.T) {
 	app := model.Application{ID: "app", Identity: model.ProcessIdentity{PID: 7, StartTime: "one", PGID: 7, Key: "app"}}
 	for _, request := range []model.IPCRequest{
@@ -92,6 +112,33 @@ func TestServeJSONLRejectsStaleOrInvalidActionTargets(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServeJSONLPreventsReplaceBetweenValidationAndDispatch(t *testing.T) {
+	app := model.Application{ID: "app", Identity: model.ProcessIdentity{PID: 7, StartTime: "one", PGID: 7, Key: "app"}}
+	executor := blockingActionExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	service := &Service{Actions: executor}
+	snapshot := service.Replace(model.Snapshot{Applications: []model.Application{app}})
+	done := make(chan model.IPCResponse, 1)
+	go func() {
+		done <- serveAction(t, service, model.IPCRequest{Version: IPCVersion, RequestID: "action", ObservedRevision: snapshot.Revision, Method: "action", Action: "focus", Target: app.ID, Identity: app.Identity})
+	}()
+	<-executor.started
+	replaced := make(chan struct{})
+	go func() {
+		service.Replace(model.Snapshot{Applications: []model.Application{{ID: app.ID, Identity: model.ProcessIdentity{PID: 8, StartTime: "two", PGID: 8, Key: "app"}}}})
+		close(replaced)
+	}()
+	select {
+	case <-replaced:
+		t.Fatal("Replace interleaved with a validated action")
+	default:
+	}
+	close(executor.release)
+	if response := <-done; response.Error != nil {
+		t.Fatalf("response=%#v", response)
+	}
+	<-replaced
 }
 
 func TestServeJSONLPreservesPartialAndTypedFailures(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -16,24 +15,13 @@ const fileName = "config.toml"
 
 type Config struct {
 	ScanIntervalSeconds int    `toml:"scan_interval_seconds"`
-	ShowExternal        bool   `toml:"show_external"`
-	Grouping            string `toml:"grouping"`
-	SidebarMin          int    `toml:"sidebar_min"`
-	SidebarMax          int    `toml:"sidebar_max"`
-	URL                 URL    `toml:"url"`
 	IgnoredPorts        []int  `toml:"ignored_ports"`
 	Opener              string `toml:"opener"`
 	Clipboard           string `toml:"clipboard"`
 }
 
-type URL struct {
-	Scheme string `toml:"scheme"`
-	Host   string `toml:"host"`
-	Path   string `toml:"path"`
-}
-
 func Defaults() Config {
-	return Config{ScanIntervalSeconds: 5, Grouping: "process-ancestry", SidebarMin: 24, SidebarMax: 48, URL: URL{Scheme: "http", Host: "localhost", Path: ""}, Opener: "system", Clipboard: "system"}
+	return Config{ScanIntervalSeconds: 5, Opener: "system", Clipboard: "system"}
 }
 
 func Dir() (string, error) {
@@ -80,21 +68,6 @@ func (c Config) Validate() error {
 	if c.ScanIntervalSeconds < 1 || c.ScanIntervalSeconds > 3600 {
 		return fmt.Errorf("scan_interval_seconds must be 1..3600")
 	}
-	if c.Grouping != "process-ancestry" {
-		return fmt.Errorf("grouping must be process-ancestry")
-	}
-	if c.SidebarMin < 16 || c.SidebarMax < c.SidebarMin || c.SidebarMax > 120 {
-		return fmt.Errorf("sidebar bounds must be 16 <= min <= max <= 120")
-	}
-	if c.URL.Scheme != "http" && c.URL.Scheme != "https" {
-		return fmt.Errorf("url.scheme must be http or https")
-	}
-	if c.URL.Host != "localhost" && c.URL.Host != "127.0.0.1" && c.URL.Host != "::1" {
-		return fmt.Errorf("url.host must be loopback")
-	}
-	if strings.ContainsAny(c.URL.Path, "\r\n") || (c.URL.Path != "" && !strings.HasPrefix(c.URL.Path, "/")) {
-		return fmt.Errorf("url.path must be empty or start with /")
-	}
 	if c.Opener != "system" && c.Opener != "disabled" {
 		return fmt.Errorf("opener must be system or disabled")
 	}
@@ -112,6 +85,8 @@ func (c Config) Validate() error {
 }
 
 func (c Config) Ignored(port int) bool {
-	return sort.SearchInts(sorted(c.IgnoredPorts), port) < len(c.IgnoredPorts) && sorted(c.IgnoredPorts)[sort.SearchInts(sorted(c.IgnoredPorts), port)] == port
+	values := sorted(c.IgnoredPorts)
+	index := sort.SearchInts(values, port)
+	return index < len(values) && values[index] == port
 }
 func sorted(values []int) []int { copy := append([]int(nil), values...); sort.Ints(copy); return copy }

@@ -16,3 +16,16 @@ func TestServiceReplacePublishesCompleteRevision(t *testing.T) {
 		t.Fatalf("snapshot = %#v, want app-a", got)
 	}
 }
+
+func TestServiceMarkStaleIsBoundedAndDoesNotChurnRevisions(t *testing.T) {
+	service := &Service{}
+	first := service.Replace(model.Snapshot{Applications: []model.Application{{ID: "app"}}})
+	stale := service.MarkStale()
+	again := service.MarkStale()
+	if stale.Revision != first.Revision+1 || again.Revision != stale.Revision || !stale.Applications[0].Association.Stale {
+		t.Fatalf("first=%#v stale=%#v again=%#v", first, stale, again)
+	}
+	if evidence := stale.Applications[0].Evidence; len(evidence) != 1 || evidence[0].Unavailable != rebuildUnavailable {
+		t.Fatalf("evidence=%#v", evidence)
+	}
+}

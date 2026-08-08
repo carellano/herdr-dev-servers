@@ -127,6 +127,25 @@ func TestFactoryRuntimeRecoversOnlyKnownPaneListenersAfterDarwinGlobalOmission(t
 	}
 }
 
+func TestFactoryRuntimeFiltersIgnoredPortsBeforeCorrelation(t *testing.T) {
+	topology := json.RawMessage(`{"workspaces":[{"workspace_id":"w","label":"Work"}],"tabs":[{"tab_id":"t","workspace_id":"w","label":"Tab"}],"panes":[{"pane_id":"p","tab_id":"t","workspace_id":"w","label":"Pane"}]}`)
+	factory := Factory{
+		Ignored: func(port int) bool { return port == 3000 },
+		Scanner: emptyScanner{}, Processes: knownPaneProcesses{},
+		Snapshot: func(context.Context) (json.RawMessage, error) { return topology, nil },
+		ProcessInfo: func(context.Context, string) (herdr.ProcessInfoResponse, error) {
+			return herdr.ProcessInfoResponse{PaneID: "p", ForegroundProcesses: []herdr.ProcessInfo{{PID: 6, Command: "node app.js", CWD: "/work"}}}, nil
+		},
+	}
+	scanner := &knownPaneScanner{global: []discovery.Listener{{PID: 6, Port: 3000, Address: "127.0.0.1"}, {PID: 6, Port: 4000, Address: "127.0.0.1"}}}
+	factory.Scanner = scanner
+	service := &daemon.Service{}
+	snapshot, err := factory.Runtime(service).Rebuild(context.Background(), service.Snapshot())
+	if err != nil || len(snapshot.Applications) != 1 || len(snapshot.Applications[0].Endpoints) != 1 || snapshot.Applications[0].Endpoints[0].Port != 4000 {
+		t.Fatalf("snapshot=%#v err=%v", snapshot, err)
+	}
+}
+
 type emptyScanner struct{}
 
 func (emptyScanner) Scan(context.Context) ([]discovery.Listener, error) { return nil, nil }

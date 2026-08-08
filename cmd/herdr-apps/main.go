@@ -84,6 +84,7 @@ func runWith(args []string, out io.Writer, ensureWatch func(context.Context) err
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		factory := adapter.NewFactory(adapter.DefaultSocket())
+		factory.Ignored = cfg.Ignored
 		service := newDaemonService(factory, cfg)
 		factory.Interval = cfg.Interval()
 		runtime := factory.Runtime(service)

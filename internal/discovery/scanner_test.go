@@ -100,6 +100,19 @@ func TestParseLinuxTCPListenersUsesDeterministicFixture(t *testing.T) {
 	}
 }
 
+func TestMergeLinuxTCPListenersParsesIPv4AndIPv6(t *testing.T) {
+	tcp := []byte("  0: 0100007F:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 42 1\n")
+	tcp6 := []byte("  0: 00000000000000000000000001000000:0BB9 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 42 2\n  1: 00000000000000000000000000000000:0BBA 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 42 3\n")
+	listeners, err := MergeLinuxTCPListeners(tcp, tcp6, map[string]int{"1": 7, "2": 8, "3": 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Listener{{PID: 7, Address: "127.0.0.1", Port: 3000}, {PID: 8, Address: "::1", Port: 3001}, {PID: 9, Address: "::", Port: 3002}}
+	if !reflect.DeepEqual(listeners, want) {
+		t.Fatalf("listeners=%#v want=%#v", listeners, want)
+	}
+}
+
 func TestDarwinProcessTableUsesFixedArgv(t *testing.T) {
 	runner := &fakeRunner{out: []byte("42 1 42 Thu Aug  7 12:34:56 2026 /usr/bin/node node server.js\n")}
 	table := DarwinProcessTable{Runner: runner}

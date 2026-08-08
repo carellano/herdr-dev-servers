@@ -36,8 +36,8 @@ func TestDoctorUsesInjectedProbe(t *testing.T) {
 		err  error
 		want string
 	}{
-		{name: "unavailable", err: context.DeadlineExceeded, want: "live checks not claimed"},
-		{name: "reachable", want: "Herdr API: reachable"},
+		{name: "unavailable", err: context.DeadlineExceeded, want: "API compatibility was not checked"},
+		{name: "reachable", want: "Herdr socket: reachable; API compatibility was not checked"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			called := ""

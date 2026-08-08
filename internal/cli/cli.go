@@ -76,16 +76,16 @@ func Doctor(paths daemon.Paths, cfg config.Config) string {
 }
 
 func doctor(paths daemon.Paths, cfg config.Config, socket string, probe socketProbe) string {
-	checks := []string{"plugin config: valid", "scanner: platform adapter configured", "clipboard: " + cfg.Clipboard, "opener: " + cfg.Opener, fmt.Sprintf("sidebar: %d..%d", cfg.SidebarMin, cfg.SidebarMax)}
+	checks := []string{"plugin config: valid", "scanner: platform adapter configured", "clipboard: " + cfg.Clipboard, "opener: " + cfg.Opener}
 	if _, err := os.Stat(paths.Socket); err == nil {
 		checks = append(checks, "daemon socket: available")
 	} else {
 		checks = append(checks, "daemon socket: unavailable (start `herdr-apps daemon`)")
 	}
 	if err := probe(socket); err == nil {
-		checks = append(checks, "Herdr API: reachable; live schema validation pending")
+		checks = append(checks, "Herdr socket: reachable; API compatibility was not checked")
 	} else {
-		checks = append(checks, "Herdr API: unavailable; live checks not claimed")
+		checks = append(checks, "Herdr socket: unavailable; API compatibility was not checked")
 	}
 	return strings.Join(checks, "\n") + "\n"
 }
