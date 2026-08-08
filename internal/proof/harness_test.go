@@ -82,7 +82,7 @@ func TestExpectedStateAndCleanup(t *testing.T) {
 }
 
 func TestLiveRunnerFailsClosedAndValidatesEvidence(t *testing.T) {
-	cfg := LiveConfig{Invoke: true, FakeHerdr: true, TempRoot: "/tmp", FakeHerdrSocket: "/tmp/fake.sock", PluginSocket: "/tmp/plugin.sock"}
+	cfg := runnerConfig()
 	runner := runnerFunc(func(context.Context, LiveConfig) (LiveEvidence, error) {
 		return validEvidence(), nil
 	})
@@ -97,6 +97,17 @@ func TestLiveRunnerFailsClosedAndValidatesEvidence(t *testing.T) {
 	bad := runnerFunc(func(context.Context, LiveConfig) (LiveEvidence, error) { return LiveEvidence{}, nil })
 	if _, err := RunDarwin(context.Background(), cfg, bad); !errors.Is(err, ErrEvidence) {
 		t.Fatalf("incomplete evidence error = %v", err)
+	}
+}
+
+func TestRunDarwinInvocationRequiresEveryOptInGate(t *testing.T) {
+	args := []string{"--invoke", "--fake-herdr", "--temp-root=/tmp/proof", "--fake-socket=/tmp/proof/fake.sock", "--plugin-socket=/tmp/proof/plugin.sock", "--endpoint=http://127.0.0.1:38301", "--pid=101", "--workspace=w", "--tab=t", "--pane=p", "--replacement-pid=102", "--parent-pid=100", "--poll-timeout=1s", "--event-timeout=1s", "--metadata-values=initial,update,"}
+	runner := runnerFunc(func(context.Context, LiveConfig) (LiveEvidence, error) { return validEvidence(), nil })
+	if _, err := RunDarwinInvocation(context.Background(), args, runner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RunDarwinInvocation(context.Background(), args[1:], runner); !errors.Is(err, ErrLiveSafety) {
+		t.Fatalf("missing invoke error = %v", err)
 	}
 }
 

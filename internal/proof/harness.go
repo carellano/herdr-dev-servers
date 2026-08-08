@@ -4,8 +4,11 @@ package proof
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/carellano/herdr-apps/internal/model"
 )
@@ -123,6 +126,11 @@ func (c Cleanup) Done(name string) bool { return c.completed[name] }
 type LiveConfig struct {
 	Invoke, FakeHerdr                       bool
 	TempRoot, FakeHerdrSocket, PluginSocket string
+	Control, Replacement                    Control
+	ParentPID                               int
+	PollTimeout, EventTimeout               time.Duration
+	MetadataKey                             string
+	MetadataValues                          []string
 }
 
 // LiveEvidence is the durable receipt required from an explicitly invoked fake-Herdr runner.
@@ -142,10 +150,123 @@ type DarwinRunner interface {
 	Run(context.Context, LiveConfig) (LiveEvidence, error)
 }
 
+// DarwinOps isolates all process, socket, IPC, and cleanup boundaries for an opt-in proof.
+type DarwinOps interface {
+	EnsureStopped(context.Context) error
+	StartFakeHerdr(context.Context, LiveConfig) error
+	StartParent(context.Context, LiveConfig) error
+	StartDaemon(context.Context, LiveConfig) error
+	Poll(context.Context) (model.Snapshot, error)
+	Subscribe(context.Context) (<-chan model.Snapshot, error)
+	Metadata(context.Context) ([]MetadataCapture, error)
+	Lsof(context.Context) (string, error)
+	Cleanup(context.Context) ([]string, error)
+	Status(context.Context) (string, error)
+}
+
+// DurableDarwinRunner orchestrates a fake-Herdr proof through injected boundaries only.
+type DurableDarwinRunner struct{ Ops DarwinOps }
+
+func (r DurableDarwinRunner) Run(ctx context.Context, cfg LiveConfig) (evidence LiveEvidence, err error) {
+	if r.Ops == nil {
+		return LiveEvidence{}, fmt.Errorf("%w: Darwin operations are required", ErrLiveSafety)
+	}
+	var cleanup Cleanup
+	defer func() {
+		if !cleanup.Record("runner") {
+			return
+		}
+		receipt, cleanupErr := r.Ops.Cleanup(context.Background())
+		if cleanupErr != nil {
+			if err == nil {
+				err = cleanupErr
+			}
+			return
+		}
+		evidence.Cleanup = receipt
+		if status, statusErr := r.Ops.Status(context.Background()); statusErr != nil {
+			if err == nil {
+				err = statusErr
+			}
+		} else {
+			evidence.FinalStatus = status
+		}
+	}()
+	if err = r.Ops.EnsureStopped(ctx); err != nil {
+		return LiveEvidence{}, err
+	}
+	for _, start := range []func(context.Context, LiveConfig) error{r.Ops.StartFakeHerdr, r.Ops.StartParent, r.Ops.StartDaemon} {
+		if err = start(ctx, cfg); err != nil {
+			return LiveEvidence{}, err
+		}
+	}
+	var first model.Snapshot
+	pollCtx, cancel := context.WithTimeout(ctx, cfg.PollTimeout)
+	defer cancel()
+	for {
+		first, err = r.Ops.Poll(pollCtx)
+		if err == nil {
+			_, err = SelectControlled(first.Applications, cfg.Control)
+		}
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrNotReady) {
+			return LiveEvidence{}, err
+		}
+		if pollCtx.Err() != nil {
+			return LiveEvidence{}, pollCtx.Err()
+		}
+	}
+	events, err := r.Ops.Subscribe(ctx)
+	if err != nil {
+		return LiveEvidence{}, err
+	}
+	eventCtx, stopEvents := context.WithTimeout(ctx, cfg.EventTimeout)
+	defer stopEvents()
+	states := []model.Snapshot{first}
+	for len(states) < 3 {
+		select {
+		case snapshot, ok := <-events:
+			if !ok {
+				return LiveEvidence{}, fmt.Errorf("%w: subscription ended early", ErrEvidence)
+			}
+			states = append(states, snapshot)
+		case <-eventCtx.Done():
+			return LiveEvidence{}, eventCtx.Err()
+		}
+	}
+	if err = MatchExpected(states[1].Applications, []Control{cfg.Replacement}, []Control{cfg.Control}); err != nil {
+		return LiveEvidence{}, err
+	}
+	if err = MatchExpected(states[2].Applications, nil, []Control{cfg.Replacement}); err != nil {
+		return LiveEvidence{}, err
+	}
+	stable, err := r.Ops.Poll(ctx)
+	if err != nil || stable.Revision != states[2].Revision || !stable.SemanticallyEqual(states[2]) {
+		if err == nil {
+			err = fmt.Errorf("%w: removal revision was not stable", ErrEvidence)
+		}
+		return LiveEvidence{}, err
+	}
+	captures, err := r.Ops.Metadata(ctx)
+	if err != nil {
+		return LiveEvidence{}, err
+	}
+	if err = MatchMetadata(captures, cfg.Control.WorkspaceID, cfg.MetadataKey, cfg.MetadataValues); err != nil {
+		return LiveEvidence{}, err
+	}
+	lsof, err := r.Ops.Lsof(ctx)
+	if err != nil {
+		return LiveEvidence{}, err
+	}
+	return LiveEvidence{SocketBytes: map[string]int{"fake": len(cfg.FakeHerdrSocket), "plugin": len(cfg.PluginSocket)}, IDs: cfg.Control, ParentPID: cfg.ParentPID, Lsof: lsof, Polls: 2, States: states, Metadata: cfg.MetadataValues, Events: []string{"replacement", "removal"}}, nil
+}
+
 // RunDarwin validates isolation and receipt completeness before returning runner evidence.
 func RunDarwin(ctx context.Context, cfg LiveConfig, runner DarwinRunner) (LiveEvidence, error) {
-	if !cfg.Invoke || !cfg.FakeHerdr || runner == nil || !tempSocket(cfg.TempRoot, cfg.FakeHerdrSocket) || !tempSocket(cfg.TempRoot, cfg.PluginSocket) || len([]byte(cfg.FakeHerdrSocket)) >= 104 || len([]byte(cfg.PluginSocket)) >= 104 {
-		return LiveEvidence{}, fmt.Errorf("%w: require explicit fake Herdr, temp root, and sockets below 104 bytes", ErrLiveSafety)
+	if !cfg.Invoke || !cfg.FakeHerdr || runner == nil || !tempSocket(cfg.TempRoot, cfg.FakeHerdrSocket) || !tempSocket(cfg.TempRoot, cfg.PluginSocket) || len([]byte(cfg.FakeHerdrSocket)) >= 104 || len([]byte(cfg.PluginSocket)) >= 104 || cfg.Control.Endpoint == "" || cfg.Control.PID <= 0 || cfg.Control.WorkspaceID == "" || cfg.Control.TabID == "" || cfg.Control.PaneID == "" || cfg.Replacement.PID <= 0 || cfg.ParentPID <= 0 || cfg.PollTimeout <= 0 || cfg.EventTimeout <= 0 || cfg.MetadataKey == "" || len(cfg.MetadataValues) != 3 {
+		return LiveEvidence{}, fmt.Errorf("%w: require fake Herdr, temp sockets, controlled identities, metadata, and deadlines", ErrLiveSafety)
 	}
 	evidence, err := runner.Run(ctx, cfg)
 	if err != nil {
@@ -155,6 +276,39 @@ func RunDarwin(ctx context.Context, cfg LiveConfig, runner DarwinRunner) (LiveEv
 		return LiveEvidence{}, fmt.Errorf("%w: receipt lacks socket, process, poll, revision, metadata, event, cleanup, or final status evidence", ErrEvidence)
 	}
 	return evidence, nil
+}
+
+// RunDarwinInvocation is an explicit opt-in surface for a later injected live-proof runner.
+// It deliberately has no command registration, so ordinary binary use and go test cannot launch it.
+func RunDarwinInvocation(ctx context.Context, args []string, runner DarwinRunner) (LiveEvidence, error) {
+	fs := flag.NewFlagSet("proof-darwin", flag.ContinueOnError)
+	fs.SetOutput(new(strings.Builder))
+	var cfg LiveConfig
+	fs.BoolVar(&cfg.Invoke, "invoke", false, "permit proof execution")
+	fs.BoolVar(&cfg.FakeHerdr, "fake-herdr", false, "require fake Herdr")
+	fs.StringVar(&cfg.TempRoot, "temp-root", "", "temporary root")
+	fs.StringVar(&cfg.FakeHerdrSocket, "fake-socket", "", "fake Herdr socket")
+	fs.StringVar(&cfg.PluginSocket, "plugin-socket", "", "plugin socket")
+	fs.StringVar(&cfg.Control.Endpoint, "endpoint", "", "controlled endpoint")
+	fs.IntVar(&cfg.Control.PID, "pid", 0, "controlled listener PID")
+	fs.StringVar(&cfg.Control.WorkspaceID, "workspace", "", "controlled workspace")
+	fs.StringVar(&cfg.Control.TabID, "tab", "", "controlled tab")
+	fs.StringVar(&cfg.Control.PaneID, "pane", "", "controlled pane")
+	fs.IntVar(&cfg.Replacement.PID, "replacement-pid", 0, "replacement listener PID")
+	fs.IntVar(&cfg.ParentPID, "parent-pid", 0, "controlled parent PID")
+	fs.DurationVar(&cfg.PollTimeout, "poll-timeout", 0, "readiness deadline")
+	fs.DurationVar(&cfg.EventTimeout, "event-timeout", 0, "event deadline")
+	fs.StringVar(&cfg.MetadataKey, "metadata-key", "ports", "metadata key")
+	metadata := fs.String("metadata-values", "", "three comma-separated metadata values")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		if err == nil {
+			err = fmt.Errorf("unexpected proof-darwin arguments")
+		}
+		return LiveEvidence{}, err
+	}
+	cfg.Replacement.Endpoint, cfg.Replacement.WorkspaceID, cfg.Replacement.TabID, cfg.Replacement.PaneID = cfg.Control.Endpoint, cfg.Control.WorkspaceID, cfg.Control.TabID, cfg.Control.PaneID
+	cfg.MetadataValues = strings.Split(*metadata, ",")
+	return RunDarwin(ctx, cfg, runner)
 }
 
 func tempSocket(root, path string) bool {
