@@ -37,6 +37,131 @@ func TestDurableDarwinRunner(t *testing.T) {
 	}
 }
 
+func TestDurableDarwinRunnerBindsDynamicIdentitiesBeforeEvidence(t *testing.T) {
+	fake := newFakeDarwin()
+	cfg := runnerConfig()
+	cfg.DynamicBinding, cfg.Control.PID, cfg.Replacement.PID, cfg.ParentPID = true, 0, 0, 0
+	cfg.Binder = binderFunc(func(_ context.Context, got LiveConfig) (IdentityBinding, error) {
+		fake.order = append(fake.order, "bind")
+		if got.Control.PID != 0 || got.Replacement.PID != 0 || got.ParentPID != 0 {
+			t.Fatalf("binder received caller PIDs: %#v", got)
+		}
+		c := controlled()
+		r := c
+		r.PID = 102
+		return IdentityBinding{ParentPID: 100, Initial: c, Replacement: r}, nil
+	})
+
+	got, err := RunDarwin(context.Background(), cfg, DurableDarwinRunner{Ops: fake})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ParentPID != 100 || got.IDs.PID != 101 {
+		t.Fatalf("receipt = %#v", got)
+	}
+	if want := []string{"parent", "bind", "fake", "daemon", "poll"}; !sameStrings(fake.order[:len(want)], want) {
+		t.Fatalf("lifecycle = %v, want prefix %v", fake.order, want)
+	}
+	if fake.fakeConfig.ParentPID != 100 || fake.daemonConfig.Control.PID != 101 || fake.daemonConfig.Replacement.PID != 102 {
+		t.Fatalf("bound identities did not reach fake Herdr and daemon: fake=%#v daemon=%#v", fake.fakeConfig, fake.daemonConfig)
+	}
+}
+
+func TestDynamicIdentityBindingFailsClosed(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		mutate func(*LiveConfig)
+		bind   IdentityBinder
+	}{
+		{"missing binder", func(*LiveConfig) {}, nil},
+		{"caller PID", func(c *LiveConfig) { c.ParentPID = 100 }, binderFunc(validBinding)},
+		{"binder error", func(*LiveConfig) {}, binderFunc(func(context.Context, LiveConfig) (IdentityBinding, error) {
+			return IdentityBinding{}, errors.New("bind failed")
+		})},
+		{"zero PID", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.Initial.PID = 0
+			return b, nil
+		})},
+		{"negative PID", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.Replacement.PID = -1
+			return b, nil
+		})},
+		{"duplicate PID", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.Replacement.PID = b.Initial.PID
+			return b, nil
+		})},
+		{"listener is parent", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.ParentPID = b.Initial.PID
+			return b, nil
+		})},
+		{"endpoint drift", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.Initial.Endpoint = "http://127.0.0.1:9"
+			return b, nil
+		})},
+		{"workspace drift", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.Replacement.WorkspaceID = "other"
+			return b, nil
+		})},
+		{"tab drift", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.Initial.TabID = "other"
+			return b, nil
+		})},
+		{"pane drift", func(*LiveConfig) {}, binderFunc(func(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+			b, _ := validBinding(context.Background(), c)
+			b.Replacement.PaneID = "other"
+			return b, nil
+		})},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := runnerConfig()
+			cfg.DynamicBinding, cfg.Control.PID, cfg.Replacement.PID, cfg.ParentPID, cfg.Binder = true, 0, 0, 0, tt.bind
+			tt.mutate(&cfg)
+			fake := newFakeDarwin()
+			if _, err := RunDarwin(context.Background(), cfg, DurableDarwinRunner{Ops: fake}); err == nil {
+				t.Fatalf("RunDarwin() error = %v, want fail closed", err)
+			}
+			for _, step := range fake.order {
+				if step == "poll" {
+					t.Fatal("evidence collection started after an invalid binding")
+				}
+			}
+		})
+	}
+}
+
+func validBinding(_ context.Context, c LiveConfig) (IdentityBinding, error) {
+	initial := c.Control
+	initial.PID = 101
+	replacement := initial
+	replacement.PID = 102
+	return IdentityBinding{ParentPID: 100, Initial: initial, Replacement: replacement}, nil
+}
+
+type binderFunc func(context.Context, LiveConfig) (IdentityBinding, error)
+
+func (f binderFunc) Bind(ctx context.Context, cfg LiveConfig) (IdentityBinding, error) {
+	return f(ctx, cfg)
+}
+
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 type fakesError string
 
 func (e fakesError) Error() string        { return string(e) }
@@ -53,6 +178,9 @@ type fakeDarwin struct {
 	metadata             []MetadataCapture
 	eventErr, cleanupErr error
 	cleaned              bool
+	order                []string
+	fakeConfig           LiveConfig
+	daemonConfig         LiveConfig
 }
 
 func newFakeDarwin() *fakeDarwin {
@@ -62,11 +190,21 @@ func newFakeDarwin() *fakeDarwin {
 	return &fakeDarwin{polls: []model.Snapshot{{}, {Revision: 1, Applications: []model.Application{application(c)}}, {Revision: 3}}, events: []model.Snapshot{{Revision: 2, Applications: []model.Application{application(r)}}, {Revision: 3}}, metadata: []MetadataCapture{{WorkspaceID: c.WorkspaceID, Values: map[string]string{"ports": "initial"}}, {WorkspaceID: c.WorkspaceID, Values: map[string]string{"ports": "update"}}, {WorkspaceID: c.WorkspaceID, Values: map[string]string{"ports": ""}}}}
 }
 
-func (f *fakeDarwin) EnsureStopped(context.Context) error              { return nil }
-func (f *fakeDarwin) StartFakeHerdr(context.Context, LiveConfig) error { return nil }
-func (f *fakeDarwin) StartParent(context.Context, LiveConfig) error    { return nil }
-func (f *fakeDarwin) StartDaemon(context.Context, LiveConfig) error    { return nil }
+func (f *fakeDarwin) EnsureStopped(context.Context) error { return nil }
+func (f *fakeDarwin) StartFakeHerdr(_ context.Context, cfg LiveConfig) error {
+	f.order, f.fakeConfig = append(f.order, "fake"), cfg
+	return nil
+}
+func (f *fakeDarwin) StartParent(context.Context, LiveConfig) error {
+	f.order = append(f.order, "parent")
+	return nil
+}
+func (f *fakeDarwin) StartDaemon(_ context.Context, cfg LiveConfig) error {
+	f.order, f.daemonConfig = append(f.order, "daemon"), cfg
+	return nil
+}
 func (f *fakeDarwin) Poll(context.Context) (model.Snapshot, error) {
+	f.order = append(f.order, "poll")
 	if len(f.polls) == 0 {
 		return model.Snapshot{}, ErrNotReady
 	}

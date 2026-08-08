@@ -125,12 +125,25 @@ func (c Cleanup) Done(name string) bool { return c.completed[name] }
 // LiveConfig contains every explicit isolation input required before an opt-in Darwin proof.
 type LiveConfig struct {
 	Invoke, FakeHerdr                       bool
+	DynamicBinding                          bool
 	TempRoot, FakeHerdrSocket, PluginSocket string
 	Control, Replacement                    Control
 	ParentPID                               int
+	Binder                                  IdentityBinder
 	PollTimeout, EventTimeout               time.Duration
 	MetadataKey                             string
 	MetadataValues                          []string
+}
+
+// IdentityBinding contains the actual identities created by a controlled fixture.
+type IdentityBinding struct {
+	ParentPID            int
+	Initial, Replacement Control
+}
+
+// IdentityBinder binds fixture-created PIDs before fake Herdr or daemon evidence begins.
+type IdentityBinder interface {
+	Bind(context.Context, LiveConfig) (IdentityBinding, error)
 }
 
 // LiveEvidence is the durable receipt required from an explicitly invoked fake-Herdr runner.
@@ -195,9 +208,23 @@ func (r DurableDarwinRunner) Run(ctx context.Context, cfg LiveConfig) (evidence 
 	if err = r.Ops.EnsureStopped(ctx); err != nil {
 		return LiveEvidence{}, err
 	}
-	for _, start := range []func(context.Context, LiveConfig) error{r.Ops.StartFakeHerdr, r.Ops.StartParent, r.Ops.StartDaemon} {
-		if err = start(ctx, cfg); err != nil {
+	if cfg.DynamicBinding {
+		if err = r.Ops.StartParent(ctx, cfg); err != nil {
 			return LiveEvidence{}, err
+		}
+		if cfg, err = bindIdentities(ctx, cfg); err != nil {
+			return LiveEvidence{}, err
+		}
+		for _, start := range []func(context.Context, LiveConfig) error{r.Ops.StartFakeHerdr, r.Ops.StartDaemon} {
+			if err = start(ctx, cfg); err != nil {
+				return LiveEvidence{}, err
+			}
+		}
+	} else {
+		for _, start := range []func(context.Context, LiveConfig) error{r.Ops.StartFakeHerdr, r.Ops.StartParent, r.Ops.StartDaemon} {
+			if err = start(ctx, cfg); err != nil {
+				return LiveEvidence{}, err
+			}
 		}
 	}
 	var first model.Snapshot
@@ -265,7 +292,7 @@ func (r DurableDarwinRunner) Run(ctx context.Context, cfg LiveConfig) (evidence 
 
 // RunDarwin validates isolation and receipt completeness before returning runner evidence.
 func RunDarwin(ctx context.Context, cfg LiveConfig, runner DarwinRunner) (LiveEvidence, error) {
-	if !cfg.Invoke || !cfg.FakeHerdr || runner == nil || !tempSocket(cfg.TempRoot, cfg.FakeHerdrSocket) || !tempSocket(cfg.TempRoot, cfg.PluginSocket) || len([]byte(cfg.FakeHerdrSocket)) >= 104 || len([]byte(cfg.PluginSocket)) >= 104 || cfg.Control.Endpoint == "" || cfg.Control.PID <= 0 || cfg.Control.WorkspaceID == "" || cfg.Control.TabID == "" || cfg.Control.PaneID == "" || cfg.Replacement.PID <= 0 || cfg.ParentPID <= 0 || cfg.PollTimeout <= 0 || cfg.EventTimeout <= 0 || cfg.MetadataKey == "" || len(cfg.MetadataValues) != 3 {
+	if !cfg.Invoke || !cfg.FakeHerdr || runner == nil || !tempSocket(cfg.TempRoot, cfg.FakeHerdrSocket) || !tempSocket(cfg.TempRoot, cfg.PluginSocket) || len([]byte(cfg.FakeHerdrSocket)) >= 104 || len([]byte(cfg.PluginSocket)) >= 104 || !hasIdentity(cfg.Control) || cfg.PollTimeout <= 0 || cfg.EventTimeout <= 0 || cfg.MetadataKey == "" || len(cfg.MetadataValues) != 3 || (cfg.DynamicBinding && (cfg.Binder == nil || cfg.Control.PID != 0 || cfg.Replacement.PID != 0 || cfg.ParentPID != 0)) || (!cfg.DynamicBinding && (cfg.Control.PID <= 0 || cfg.Replacement.PID <= 0 || cfg.ParentPID <= 0)) {
 		return LiveEvidence{}, fmt.Errorf("%w: require fake Herdr, temp sockets, controlled identities, metadata, and deadlines", ErrLiveSafety)
 	}
 	evidence, err := runner.Run(ctx, cfg)
@@ -276,6 +303,37 @@ func RunDarwin(ctx context.Context, cfg LiveConfig, runner DarwinRunner) (LiveEv
 		return LiveEvidence{}, fmt.Errorf("%w: receipt lacks socket, process, poll, revision, metadata, event, cleanup, or final status evidence", ErrEvidence)
 	}
 	return evidence, nil
+}
+
+func bindIdentities(ctx context.Context, cfg LiveConfig) (LiveConfig, error) {
+	binding, err := cfg.Binder.Bind(ctx, cfg)
+	if err != nil {
+		return LiveConfig{}, fmt.Errorf("%w: bind controlled identities: %v", ErrLiveSafety, err)
+	}
+	if !sameIdentity(cfg.Control, binding.Initial) || !sameIdentity(cfg.Control, binding.Replacement) || !distinctPositive(binding.ParentPID, binding.Initial.PID, binding.Replacement.PID) {
+		return LiveConfig{}, fmt.Errorf("%w: bound identities drift or conflict", ErrLiveSafety)
+	}
+	cfg.ParentPID, cfg.Control, cfg.Replacement = binding.ParentPID, binding.Initial, binding.Replacement
+	return cfg, nil
+}
+
+func sameIdentity(want, got Control) bool {
+	return hasIdentity(want) && want.Endpoint == got.Endpoint && want.WorkspaceID == got.WorkspaceID && want.TabID == got.TabID && want.PaneID == got.PaneID
+}
+
+func hasIdentity(control Control) bool {
+	return control.Endpoint != "" && control.WorkspaceID != "" && control.TabID != "" && control.PaneID != ""
+}
+
+func distinctPositive(pids ...int) bool {
+	seen := map[int]bool{}
+	for _, pid := range pids {
+		if pid <= 0 || seen[pid] {
+			return false
+		}
+		seen[pid] = true
+	}
+	return true
 }
 
 // RunDarwinInvocation is an explicit opt-in surface for a later injected live-proof runner.
