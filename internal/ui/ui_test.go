@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -232,7 +232,7 @@ func TestReadableApplicationRendering(t *testing.T) {
 	if got := strings.Count(view, "http.server"); got != 2 {
 		t.Fatalf("display name count = %d, want list and detail once each: %q", got, view)
 	}
-	if !strings.Contains(view, "Applications (1)") || !strings.Contains(view, "Selected application") {
+	if !strings.Contains(view, "Dev Servers (1)") || !strings.Contains(view, "Selected development server") {
 		t.Fatalf("wide view did not render stable columns: %q", view)
 	}
 }
@@ -247,7 +247,7 @@ func TestNarrowViewStacksAndBoundsLines(t *testing.T) {
 	m := New(snapshot, nil)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 32, Height: 24})
 	view := next.(Model).View()
-	if strings.Contains(view, snapshot.Applications[0].ID) || !strings.Contains(view, "Selected application") {
+	if strings.Contains(view, snapshot.Applications[0].ID) || !strings.Contains(view, "Selected development server") {
 		t.Fatalf("narrow view did not stack readable detail: %q", view)
 	}
 	for _, line := range strings.Split(view, "\n") {
@@ -494,7 +494,7 @@ func TestForceEligibilityMatchesTermTargetAndClearsOnError(t *testing.T) {
 func TestEmptyStateExplainsNoAssociatedApps(t *testing.T) {
 	m := New(model.Snapshot{}, nil)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 70, Height: 24})
-	if !strings.Contains(next.(Model).View(), "No Herdr-associated applications are available.") {
-		t.Fatalf("empty state did not explain associated application filtering: %q", next.(Model).View())
+	if !strings.Contains(next.(Model).View(), "No Herdr-associated development servers are available.") {
+		t.Fatalf("empty state did not explain associated development-server filtering: %q", next.(Model).View())
 	}
 }

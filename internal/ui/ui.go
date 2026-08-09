@@ -1,4 +1,4 @@
-// Package ui presents daemon-owned application snapshots without rescanning.
+// Package ui presents daemon-owned development-server snapshots without rescanning.
 package ui
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -296,11 +296,11 @@ func (m Model) apps() []model.Application {
 }
 func (m Model) View() string {
 	if m.width == 0 {
-		return "Loading Herdr Apps..."
+		return "Loading Herdr Dev Servers..."
 	}
 	width := max(1, m.width)
 	apps := m.apps()
-	title := truncate(fmt.Sprintf("Herdr Apps | rev %d | Herdr applications", m.snapshot.Revision), width)
+	title := truncate(fmt.Sprintf("Herdr Dev Servers | rev %d | development servers", m.snapshot.Revision), width)
 	title = lipgloss.NewStyle().Bold(true).Render(title)
 
 	listWidth, detailWidth := width, width
@@ -334,9 +334,9 @@ func (m Model) View() string {
 }
 
 func (m Model) renderList(apps []model.Application, width int) string {
-	lines := []string{truncate(fmt.Sprintf("Applications (%d)", len(apps)), width)}
+	lines := []string{truncate(fmt.Sprintf("Dev Servers (%d)", len(apps)), width)}
 	if len(apps) == 0 {
-		return strings.Join(append(lines, "", truncate("No Herdr-associated applications are available.", width)), "\n")
+		return strings.Join(append(lines, "", truncate("No Herdr-associated development servers are available.", width)), "\n")
 	}
 	selected := lipgloss.NewStyle().Bold(true).Reverse(true)
 	for i, app := range apps {
@@ -360,7 +360,7 @@ func (m Model) renderDetail(apps []model.Application, width int) string {
 	app := apps[m.cursor]
 	association := app.Association
 	lines := []string{
-		truncate("Selected application", width),
+		truncate("Selected development server", width),
 		"",
 		truncate(appName(app), width),
 		truncate("Endpoints: "+endpointSummary(app), width),

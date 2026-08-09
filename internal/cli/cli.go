@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/carellano/herdr-apps/internal/config"
-	"github.com/carellano/herdr-apps/internal/daemon"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/config"
+	"github.com/carellano/herdr-dev-servers/internal/daemon"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 type Client interface {
@@ -80,7 +80,7 @@ func doctor(paths daemon.Paths, cfg config.Config, socket string, probe socketPr
 	if _, err := os.Stat(paths.Socket); err == nil {
 		checks = append(checks, "daemon socket: available")
 	} else {
-		checks = append(checks, "daemon socket: unavailable (start `herdr-apps daemon`)")
+		checks = append(checks, "daemon socket: unavailable (start `herdr-dev-servers daemon`)")
 	}
 	if err := probe(socket); err == nil {
 		checks = append(checks, "Herdr socket: reachable; API compatibility was not checked")

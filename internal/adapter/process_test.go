@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/correlation"
-	"github.com/carellano/herdr-apps/internal/discovery"
+	"github.com/carellano/herdr-dev-servers/internal/correlation"
+	"github.com/carellano/herdr-dev-servers/internal/discovery"
 )
 
 type processTableFake struct {

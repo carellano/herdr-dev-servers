@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
 )
 
 const (

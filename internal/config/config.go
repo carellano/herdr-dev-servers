@@ -32,7 +32,7 @@ func Dir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve plugin config directory: %w", err)
 	}
-	return filepath.Join(base, "herdr", "plugins", "apps"), nil
+	return filepath.Join(base, "herdr", "plugins", "dev-servers"), nil
 }
 
 func Load() (Config, string, error) {

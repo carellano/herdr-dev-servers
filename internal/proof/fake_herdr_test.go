@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
 )
 
 func TestFakeHerdrSnapshotProcessAndMetadata(t *testing.T) {
@@ -27,13 +27,13 @@ func TestFakeHerdrSnapshotProcessAndMetadata(t *testing.T) {
 	if err != nil || info.ShellPID != 7 {
 		t.Fatalf("ProcessInfo() = %#v, %v", info, err)
 	}
-	if err := tr.ReportMetadata(context.Background(), "metadata", herdr.MetadataRequest{WorkspaceID: "w", Source: "herdr-apps", Tokens: map[string]*string{"apps": ptr("one")}}); err != nil {
+	if err := tr.ReportMetadata(context.Background(), "metadata", herdr.MetadataRequest{WorkspaceID: "w", Source: "herdr-dev-servers", Tokens: map[string]*string{"dev_servers": ptr("one")}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := tr.ReportMetadata(context.Background(), "metadata-2", herdr.MetadataRequest{WorkspaceID: "w", Source: "herdr-apps", Tokens: map[string]*string{"apps": ptr("two")}}); err != nil {
+	if err := tr.ReportMetadata(context.Background(), "metadata-2", herdr.MetadataRequest{WorkspaceID: "w", Source: "herdr-dev-servers", Tokens: map[string]*string{"dev_servers": ptr("two")}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.Metadata(); len(got) != 2 || got[0].WorkspaceID != "w" || got[0].Tokens["apps"] != "one" || got[1].Tokens["apps"] != "two" {
+	if got := f.Metadata(); len(got) != 2 || got[0].WorkspaceID != "w" || got[0].Tokens["dev_servers"] != "one" || got[1].Tokens["dev_servers"] != "two" {
 		t.Fatalf("Metadata() = %#v", got)
 	}
 }

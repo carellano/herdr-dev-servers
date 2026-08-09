@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/carellano/herdr-apps/internal/herdr"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 	maxBytes     = 80
 )
 
-// Publication describes whether a metadata client should write the bounded $apps value.
+// Publication describes whether a metadata client should write the bounded $dev_servers value.
 type Publication struct {
 	Value   string
 	Digest  string
@@ -45,7 +45,7 @@ type HerdrReporter struct {
 }
 
 func (r HerdrReporter) ReportMetadata(ctx context.Context, workspace, source string, tokens map[string]*string) error {
-	id := "herdr-apps-metadata"
+	id := "herdr-dev-servers-metadata"
 	if r.RequestID != nil {
 		id = r.RequestID()
 	}
@@ -98,7 +98,7 @@ func (p *Publisher) Prepare(applications []model.Application) Publication {
 	return Publication{Value: value, Digest: digest, Changed: changed}
 }
 
-// Publish writes stable bounded $apps values, suppressing unchanged workspaces and clearing removals.
+// Publish writes stable bounded $dev_servers values, suppressing unchanged workspaces and clearing removals.
 func (p *Publisher) Publish(ctx context.Context, applications []model.Application, reporter Reporter) error {
 	if reporter == nil {
 		return &ReportError{Err: fmt.Errorf("metadata reporter is unavailable")}
@@ -129,7 +129,7 @@ func (p *Publisher) Publish(ctx context.Context, applications []model.Applicatio
 			continue
 		}
 		value := values[id]
-		if err := reporter.ReportMetadata(ctx, id, "herdr-apps", map[string]*string{"apps": &value}); err != nil {
+		if err := reporter.ReportMetadata(ctx, id, "herdr-dev-servers", map[string]*string{"dev_servers": &value}); err != nil {
 			return &ReportError{WorkspaceID: id, Err: err}
 		}
 	}

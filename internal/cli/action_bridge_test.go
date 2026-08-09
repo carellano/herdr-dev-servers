@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 type recordingClient struct {

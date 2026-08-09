@@ -61,7 +61,7 @@ func TestWatchEnsurerDoesNotSpawnWithCanceledContext(t *testing.T) {
 func TestWatchEnsurerStartsLiteralDaemonWithInheritedEnvironment(t *testing.T) {
 	starter := &fakeWatchStarter{process: fakeWatchProcess{}}
 	ensurer := testWatchEnsurer([]error{errors.New("unavailable"), nil}, starter)
-	ensurer.Executable = func() (string, error) { return "/plugin root/herdr-apps", nil }
+	ensurer.Executable = func() (string, error) { return "/plugin root/herdr-dev-servers", nil }
 	ensurer.Environment = func() []string {
 		return []string{"HERDR_SOCKET_PATH=/tmp/herdr.sock", "HERDR_PLUGIN_STATE_DIR=/tmp/state"}
 	}
@@ -72,7 +72,7 @@ func TestWatchEnsurerStartsLiteralDaemonWithInheritedEnvironment(t *testing.T) {
 		t.Fatalf("starts = %d", len(starter.calls))
 	}
 	call := starter.calls[0]
-	if call.executable != "/plugin root/herdr-apps" || len(call.argv) != 1 || call.argv[0] != "daemon" {
+	if call.executable != "/plugin root/herdr-dev-servers" || len(call.argv) != 1 || call.argv[0] != "daemon" {
 		t.Fatalf("command = %#v", call)
 	}
 	if strings.Join(call.environment, ",") != "HERDR_SOCKET_PATH=/tmp/herdr.sock,HERDR_PLUGIN_STATE_DIR=/tmp/state" {
@@ -92,7 +92,7 @@ func testWatchEnsurer(health []error, starter WatchStarter) WatchEnsurer {
 			index++
 			return err
 		},
-		Executable:  func() (string, error) { return "/plugin/herdr-apps", nil },
+		Executable:  func() (string, error) { return "/plugin/herdr-dev-servers", nil },
 		Environment: func() []string { return nil },
 		Starter:     starter,
 		Clock:       immediateWatchClock{},

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 // Executor adapts the existing evidence-backed action Service to daemon IPC.

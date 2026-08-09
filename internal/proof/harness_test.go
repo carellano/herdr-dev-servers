@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 func controlled() Control {
@@ -43,12 +43,12 @@ func TestSelectControlled(t *testing.T) {
 
 func TestCaptureMetadataAndTransitions(t *testing.T) {
 	captures := []MetadataCapture{
-		{WorkspaceID: "other", Values: map[string]string{"apps": "wrong"}},
-		{WorkspaceID: "w", Values: map[string]string{"apps": "initial"}},
-		{WorkspaceID: "w", Values: map[string]string{"apps": "update"}},
-		{WorkspaceID: "w", Values: map[string]string{"apps": ""}},
+		{WorkspaceID: "other", Values: map[string]string{"dev_servers": "wrong"}},
+		{WorkspaceID: "w", Values: map[string]string{"dev_servers": "initial"}},
+		{WorkspaceID: "w", Values: map[string]string{"dev_servers": "update"}},
+		{WorkspaceID: "w", Values: map[string]string{"dev_servers": ""}},
 	}
-	if err := MatchMetadata(captures, "w", "apps", []string{"initial", "update", ""}); err != nil {
+	if err := MatchMetadata(captures, "w", "dev_servers", []string{"initial", "update", ""}); err != nil {
 		t.Fatal(err)
 	}
 	base := model.Snapshot{Applications: []model.Application{{ID: "one"}}}

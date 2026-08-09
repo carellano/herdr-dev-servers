@@ -1,36 +1,30 @@
-id = "carellano.apps"
-name = "Herdr Apps"
+id = "carellano.dev-servers"
+name = "Herdr Dev Servers"
 version = "0.1.0"
 min_herdr_version = "0.8.0"
-description = "Discover and safely inspect listening development applications."
+description = "Discover and safely inspect listening development servers."
 platforms = ["linux", "macos"]
 
 [[build]]
-command = ["go", "build", "-o", "./herdr-apps", "./cmd/herdr-apps"]
+command = ["go", "build", "-o", "./herdr-dev-servers", "./cmd/herdr-dev-servers"]
 
 [[startup]]
-command = ["./herdr-apps", "ensure-watch"]
+command = ["./herdr-dev-servers", "ensure-watch"]
 
 [[events]]
 on = "pane.created"
-command = ["./herdr-apps", "ensure-watch"]
+command = ["./herdr-dev-servers", "ensure-watch"]
 
 [[actions]]
-id = "list"
-title = "List listening applications"
+id = "open"
+title = "Open Dev Servers"
 contexts = ["workspace"]
-command = ["./herdr-apps", "list"]
-
-[[actions]]
-id = "apps"
-title = "Open Herdr Apps"
-contexts = ["workspace"]
-command = ["./herdr-apps", "open"]
+command = ["./herdr-dev-servers", "open"]
 
 [[panes]]
-id = "apps"
-title = "Herdr Apps"
+id = "dev-servers"
+title = "Herdr Dev Servers"
 placement = "popup"
 width = "80%"
 height = "80%"
-command = ["./herdr-apps", "tui"]
+command = ["./herdr-dev-servers", "tui"]

@@ -5,16 +5,70 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 type fakeTicker struct {
 	ticks   chan time.Time
 	stopped chan struct{}
+}
+
+func TestStatePathsUsesCanonicalPluginState(t *testing.T) {
+	missingHome := func() (string, error) { return "", errors.New("home unavailable") }
+	for _, test := range []struct {
+		name    string
+		env     map[string]string
+		home    func() (string, error)
+		want    string
+		wantErr string
+	}{
+		{
+			name: "explicit plugin state takes precedence",
+			env:  map[string]string{"HERDR_PLUGIN_STATE_DIR": "/custom/plugin-state", "XDG_STATE_HOME": "/xdg/state"},
+			home: func() (string, error) { return "/home/tester", nil },
+			want: "/custom/plugin-state",
+		},
+		{
+			name: "XDG state home",
+			env:  map[string]string{"XDG_STATE_HOME": "/xdg/state"},
+			home: missingHome,
+			want: filepath.Join("/xdg/state", "herdr", "plugins", "carellano.dev-servers"),
+		},
+		{
+			name: "user home fallback",
+			home: func() (string, error) { return "/home/tester", nil },
+			want: filepath.Join("/home/tester", ".local", "state", "herdr", "plugins", "carellano.dev-servers"),
+		},
+		{
+			name:    "missing user home",
+			home:    missingHome,
+			wantErr: "resolve user home for plugin state: home unavailable",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			paths, err := statePaths(func(key string) string { return test.env[key] }, test.home)
+			if test.wantErr != "" {
+				if err == nil || err.Error() != test.wantErr {
+					t.Fatalf("error = %v, want %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if paths.StateDir != test.want || paths.Socket != filepath.Join(test.want, "herdr-dev-servers.sock") || paths.Lock != filepath.Join(test.want, "herdr-dev-servers.lock") {
+				t.Fatalf("paths = %#v", paths)
+			}
+			if strings.Contains(paths.StateDir, "Application Support/herdr/state") {
+				t.Fatalf("state path retained obsolete default: %q", paths.StateDir)
+			}
+		})
+	}
 }
 
 func (t *fakeTicker) Chan() <-chan time.Time { return t.ticks }

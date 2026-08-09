@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/actions"
-	"github.com/carellano/herdr-apps/internal/config"
-	"github.com/carellano/herdr-apps/internal/daemon"
-	"github.com/carellano/herdr-apps/internal/discovery"
-	"github.com/carellano/herdr-apps/internal/herdr"
-	"github.com/carellano/herdr-apps/internal/metadata"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/actions"
+	"github.com/carellano/herdr-dev-servers/internal/config"
+	"github.com/carellano/herdr-dev-servers/internal/daemon"
+	"github.com/carellano/herdr-dev-servers/internal/discovery"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/metadata"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 // PaneUnavailableError identifies a pane whose process evidence is unavailable.
@@ -114,14 +114,14 @@ func NewFactory(socket string) Factory {
 		Scanner: discovery.NewSystemScanner(), Processes: discovery.NewSystemProcessTable(),
 		Interval: config.Defaults().Interval(),
 		ProcessInfo: func(ctx context.Context, pane string) (herdr.ProcessInfoResponse, error) {
-			return transport.ProcessInfo(ctx, "herdr-apps-process", pane)
+			return transport.ProcessInfo(ctx, "herdr-dev-servers-process", pane)
 		},
 		Snapshot: func(ctx context.Context) (json.RawMessage, error) {
-			response, err := transport.Snapshot(ctx, "herdr-apps-snapshot")
+			response, err := transport.Snapshot(ctx, "herdr-dev-servers-snapshot")
 			return response.Snapshot, err
 		},
 		Events: func(ctx context.Context) (<-chan herdr.Event, error) {
-			return transport.Subscribe(ctx, "herdr-apps-events", topologySubscriptions())
+			return transport.Subscribe(ctx, "herdr-dev-servers-events", topologySubscriptions())
 		},
 		Reporter: metadata.HerdrReporter{Transport: transport},
 		Focus:    newFocusClient(transport, defaultFocusTimeout),

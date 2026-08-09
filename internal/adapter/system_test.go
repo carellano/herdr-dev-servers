@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/actions"
+	"github.com/carellano/herdr-dev-servers/internal/actions"
 )
 
 type fakeSystemCommand struct {

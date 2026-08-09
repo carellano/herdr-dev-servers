@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 // ActionExecutor performs only daemon-validated action intents.

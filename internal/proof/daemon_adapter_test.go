@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 func TestDaemonAdapterLifecycle(t *testing.T) {
@@ -26,7 +26,7 @@ func TestDaemonAdapterLifecycle(t *testing.T) {
 			fake := newAdapterFake(t)
 			tt.mutate(fake)
 			adapter := NewDaemonAdapter(fake.host, fake, fake, fake, fake, time.Millisecond, time.Millisecond)
-			err := adapter.Start(context.Background(), "herdr-apps", "plugin.sock")
+			err := adapter.Start(context.Background(), "herdr-dev-servers", "plugin.sock")
 			if fake.startErr != nil {
 				if err == nil || err.Error() != tt.wantErr.Error() {
 					t.Fatalf("Start() error = %v, want %v", err, tt.wantErr)
@@ -69,7 +69,7 @@ func TestDaemonAdapterShutdownWaitIsBounded(t *testing.T) {
 	fake := newAdapterFake(t)
 	fake.waitErr = context.DeadlineExceeded
 	adapter := NewDaemonAdapter(fake.host, fake, fake, fake, fake, time.Millisecond, time.Millisecond)
-	if err := adapter.Start(context.Background(), "herdr-apps", "plugin.sock"); err != nil {
+	if err := adapter.Start(context.Background(), "herdr-dev-servers", "plugin.sock"); err != nil {
 		t.Fatal(err)
 	}
 	if err := adapter.Cleanup(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
@@ -80,10 +80,10 @@ func TestDaemonAdapterShutdownWaitIsBounded(t *testing.T) {
 func TestDaemonAdapterUsesFixedBoundaries(t *testing.T) {
 	fake := newAdapterFake(t)
 	adapter := NewDaemonAdapter(fake.host, fake, fake, fake, fake, time.Millisecond, time.Millisecond)
-	if err := adapter.Start(context.Background(), "herdr-apps", "plugin.sock"); err != nil {
+	if err := adapter.Start(context.Background(), "herdr-dev-servers", "plugin.sock"); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"herdr-apps", "daemon", "--socket", fake.socket}; !sameStrings(fake.argv, want) {
+	if want := []string{"herdr-dev-servers", "daemon", "--socket", fake.socket}; !sameStrings(fake.argv, want) {
 		t.Fatalf("argv = %q, want %q", fake.argv, want)
 	}
 	if _, err := adapter.Lsof(context.Background()); err != nil {

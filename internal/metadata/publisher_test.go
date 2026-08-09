@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/carellano/herdr-apps/internal/herdr"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 type reportCall struct{ workspace, source, key, value string }
@@ -21,8 +21,8 @@ func (f *reporterFake) ReportMetadata(_ context.Context, workspace, source strin
 		return errors.New("stopped")
 	}
 	value := ""
-	if tokens["apps"] != nil {
-		value = *tokens["apps"]
+	if tokens["dev_servers"] != nil {
+		value = *tokens["dev_servers"]
 	}
 	for key := range tokens {
 		f.calls = append(f.calls, reportCall{workspace, source, key, value})
@@ -86,7 +86,7 @@ func TestPublishWritesOnlyChangedWorkspacesAndClearsRemoved(t *testing.T) {
 	if len(reporter.calls) != 2 {
 		t.Fatalf("calls = %#v", reporter.calls)
 	}
-	if reporter.calls[0] != (reportCall{workspace: "a", source: "herdr-apps", key: "apps", value: ":3000"}) || reporter.calls[1] != (reportCall{workspace: "b", source: "herdr-apps", key: "apps", value: ":3001"}) {
+	if reporter.calls[0] != (reportCall{workspace: "a", source: "herdr-dev-servers", key: "dev_servers", value: ":3000"}) || reporter.calls[1] != (reportCall{workspace: "b", source: "herdr-dev-servers", key: "dev_servers", value: ":3001"}) {
 		t.Fatalf("metadata calls = %#v", reporter.calls)
 	}
 	if err := publisher.Publish(context.Background(), apps, reporter); err != nil {
@@ -98,7 +98,7 @@ func TestPublishWritesOnlyChangedWorkspacesAndClearsRemoved(t *testing.T) {
 	if err := publisher.Publish(context.Background(), apps[:1], reporter); err != nil {
 		t.Fatal(err)
 	}
-	if got := reporter.calls[2]; got.workspace != "b" || got.source != "herdr-apps" || got.key != "apps" || got.value != "" {
+	if got := reporter.calls[2]; got.workspace != "b" || got.source != "herdr-dev-servers" || got.key != "dev_servers" || got.value != "" {
 		t.Fatalf("removed workspace clear = %#v", got)
 	}
 }
@@ -109,7 +109,7 @@ func TestPublishIncludesPortWithoutURL(t *testing.T) {
 	if err := publisher.Publish(context.Background(), apps, reporter); err != nil {
 		t.Fatal(err)
 	}
-	if got := reporter.calls; len(got) != 1 || got[0] != (reportCall{workspace: "wC", source: "herdr-apps", key: "apps", value: ":8081"}) {
+	if got := reporter.calls; len(got) != 1 || got[0] != (reportCall{workspace: "wC", source: "herdr-dev-servers", key: "dev_servers", value: ":8081"}) {
 		t.Fatalf("calls = %#v", got)
 	}
 }
@@ -136,10 +136,10 @@ func TestHerdrReporterUsesMetadataTransport(t *testing.T) {
 	transport := &metadataTransportFake{}
 	value := ":3000"
 	reporter := HerdrReporter{Transport: transport, RequestID: func() string { return "request" }}
-	if err := reporter.ReportMetadata(context.Background(), "workspace", "herdr-apps", map[string]*string{"apps": &value}); err != nil {
+	if err := reporter.ReportMetadata(context.Background(), "workspace", "herdr-dev-servers", map[string]*string{"dev_servers": &value}); err != nil {
 		t.Fatal(err)
 	}
-	if transport.id != "request" || transport.metadata.WorkspaceID != "workspace" || transport.metadata.Source != "herdr-apps" || transport.metadata.Tokens["apps"] != &value {
+	if transport.id != "request" || transport.metadata.WorkspaceID != "workspace" || transport.metadata.Source != "herdr-dev-servers" || transport.metadata.Tokens["dev_servers"] != &value {
 		t.Fatalf("transport = %#v", transport)
 	}
 }

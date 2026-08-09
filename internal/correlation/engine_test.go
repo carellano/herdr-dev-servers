@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/discovery"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/discovery"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 func process(pid, parent int, cwd string) discovery.Process {

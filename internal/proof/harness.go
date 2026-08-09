@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 var (
@@ -356,7 +356,7 @@ func RunDarwinInvocation(ctx context.Context, args []string, runner DarwinRunner
 	fs.IntVar(&cfg.ParentPID, "parent-pid", 0, "controlled parent PID")
 	fs.DurationVar(&cfg.PollTimeout, "poll-timeout", 0, "readiness deadline")
 	fs.DurationVar(&cfg.EventTimeout, "event-timeout", 0, "event deadline")
-	fs.StringVar(&cfg.MetadataKey, "metadata-key", "apps", "metadata key")
+	fs.StringVar(&cfg.MetadataKey, "metadata-key", "dev_servers", "metadata key")
 	metadata := fs.String("metadata-values", "", "three comma-separated metadata values")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		if err == nil {

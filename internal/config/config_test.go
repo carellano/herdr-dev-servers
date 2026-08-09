@@ -37,3 +37,14 @@ func TestLoadDirRejectsUnknownAndAcceptsPolicies(t *testing.T) {
 		t.Fatal("unknown key accepted")
 	}
 }
+
+func TestDirUsesDevServersPluginLeaf(t *testing.T) {
+	t.Setenv("HERDR_PLUGIN_CONFIG_DIR", "")
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Dir(); err != nil || got != filepath.Join(base, "herdr", "plugins", "dev-servers") {
+		t.Fatalf("Dir() = %q, %v", got, err)
+	}
+}

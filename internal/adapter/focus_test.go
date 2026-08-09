@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
 )
 
 func TestFocusClientUsesDocumentedCallsWithDeadlines(t *testing.T) {
@@ -27,10 +27,10 @@ func TestFocusClientUsesDocumentedCallsWithDeadlines(t *testing.T) {
 		t.Fatalf("CurrentFocus() = %#v", current)
 	}
 	want := []focusCall{
-		{method: "pane.focus", id: "herdr-apps-focus-pane", target: "w1:p1"},
-		{method: "workspace.focus", id: "herdr-apps-focus-workspace", target: "w1"},
-		{method: "tab.focus", id: "herdr-apps-focus-tab", target: "w1:t1"},
-		{method: "session.snapshot", id: "herdr-apps-current-focus"},
+		{method: "pane.focus", id: "herdr-dev-servers-focus-pane", target: "w1:p1"},
+		{method: "workspace.focus", id: "herdr-dev-servers-focus-workspace", target: "w1"},
+		{method: "tab.focus", id: "herdr-dev-servers-focus-tab", target: "w1:t1"},
+		{method: "session.snapshot", id: "herdr-dev-servers-current-focus"},
 	}
 	if len(transport.calls) != len(want) {
 		t.Fatalf("calls = %#v, want %#v", transport.calls, want)

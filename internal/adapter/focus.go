@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/actions"
-	"github.com/carellano/herdr-apps/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/actions"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
 )
 
 const defaultFocusTimeout = 2 * time.Second
@@ -34,7 +34,7 @@ func (c FocusClient) FocusPane(_, _, paneID string) error {
 	}
 	ctx, cancel := c.context()
 	defer cancel()
-	return c.Transport.FocusPane(ctx, "herdr-apps-focus-pane", paneID)
+	return c.Transport.FocusPane(ctx, "herdr-dev-servers-focus-pane", paneID)
 }
 
 func (c FocusClient) FocusWorkspaceTab(workspaceID, tabID string) error {
@@ -43,10 +43,10 @@ func (c FocusClient) FocusWorkspaceTab(workspaceID, tabID string) error {
 	}
 	ctx, cancel := c.context()
 	defer cancel()
-	if err := c.Transport.FocusWorkspace(ctx, "herdr-apps-focus-workspace", workspaceID); err != nil {
+	if err := c.Transport.FocusWorkspace(ctx, "herdr-dev-servers-focus-workspace", workspaceID); err != nil {
 		return err
 	}
-	return c.Transport.FocusTab(ctx, "herdr-apps-focus-tab", tabID)
+	return c.Transport.FocusTab(ctx, "herdr-dev-servers-focus-tab", tabID)
 }
 
 func (c FocusClient) CurrentFocus() (actions.FocusLocation, error) {
@@ -55,7 +55,7 @@ func (c FocusClient) CurrentFocus() (actions.FocusLocation, error) {
 	}
 	ctx, cancel := c.context()
 	defer cancel()
-	focus, err := c.Transport.CurrentFocus(ctx, "herdr-apps-current-focus")
+	focus, err := c.Transport.CurrentFocus(ctx, "herdr-dev-servers-current-focus")
 	return actions.FocusLocation{
 		WorkspaceID: focus.FocusedWorkspaceID,
 		TabID:       focus.FocusedTabID,

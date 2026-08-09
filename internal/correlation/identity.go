@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/carellano/herdr-apps/internal/discovery"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/discovery"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 // LogicalIdentity creates a stable launch description plus incarnation evidence.

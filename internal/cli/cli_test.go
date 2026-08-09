@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/carellano/herdr-apps/internal/config"
-	"github.com/carellano/herdr-apps/internal/daemon"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/config"
+	"github.com/carellano/herdr-dev-servers/internal/daemon"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 type fakeClient struct{ response model.IPCResponse }

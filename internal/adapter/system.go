@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/actions"
+	"github.com/carellano/herdr-dev-servers/internal/actions"
 )
 
 const systemActionTimeout = 2 * time.Second

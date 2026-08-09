@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/carellano/herdr-apps/internal/correlation"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/correlation"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 // Open validates a local HTTP(S) URL and invokes a fixed desktop opener argv.

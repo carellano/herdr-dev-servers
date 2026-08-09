@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/actions"
-	"github.com/carellano/herdr-apps/internal/herdr"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/actions"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 type fakeActionExecutor struct {

@@ -9,8 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/carellano/herdr-apps/internal/config"
-	"github.com/carellano/herdr-apps/internal/model"
+	"github.com/carellano/herdr-dev-servers/internal/model"
 )
 
 type Paths struct{ StateDir, Socket, Lock string }
@@ -161,16 +160,23 @@ func (r Runtime) runEvents(ctx context.Context, events <-chan struct{}, interval
 }
 
 func StatePaths() (Paths, error) {
-	base := os.Getenv("HERDR_PLUGIN_STATE_DIR")
+	return statePaths(os.Getenv, os.UserHomeDir)
+}
+
+func statePaths(getenv func(string) string, userHomeDir func() (string, error)) (Paths, error) {
+	base := getenv("HERDR_PLUGIN_STATE_DIR")
 	if base == "" {
-		var err error
-		base, err = config.Dir()
-		if err != nil {
-			return Paths{}, err
+		if stateHome := getenv("XDG_STATE_HOME"); stateHome != "" {
+			base = filepath.Join(stateHome, "herdr", "plugins", "carellano.dev-servers")
+		} else {
+			home, err := userHomeDir()
+			if err != nil {
+				return Paths{}, fmt.Errorf("resolve user home for plugin state: %w", err)
+			}
+			base = filepath.Join(home, ".local", "state", "herdr", "plugins", "carellano.dev-servers")
 		}
-		base = filepath.Join(base, "state")
 	}
-	return Paths{StateDir: base, Socket: filepath.Join(base, "daemon.sock"), Lock: filepath.Join(base, "daemon.lock")}, nil
+	return Paths{StateDir: base, Socket: filepath.Join(base, "herdr-dev-servers.sock"), Lock: filepath.Join(base, "herdr-dev-servers.lock")}, nil
 }
 
 // Serve exposes the supplied daemon authority over its private IPC socket.

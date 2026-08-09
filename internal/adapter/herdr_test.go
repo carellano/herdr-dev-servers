@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/carellano/herdr-apps/internal/daemon"
-	"github.com/carellano/herdr-apps/internal/discovery"
-	"github.com/carellano/herdr-apps/internal/herdr"
+	"github.com/carellano/herdr-dev-servers/internal/daemon"
+	"github.com/carellano/herdr-dev-servers/internal/discovery"
+	"github.com/carellano/herdr-dev-servers/internal/herdr"
 )
 
 func TestTopologyConvertsFlattenedHerdrSnapshot(t *testing.T) {
