@@ -24,7 +24,7 @@ jobs:
       - name: Check release contract
         run: |
           scripts/check-release.sh
-          test "${GITHUB_REF_NAME#v}" = "$(awk -F '\"' '$1 == \"version = \" { print $2; exit }' herdr-plugin.toml)"
+          test "${GITHUB_REF_NAME#v}" = "$(awk -F '"' '$1 == "version = " { print $2; exit }' herdr-plugin.toml)"
       - name: Release archives
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:

@@ -10,13 +10,13 @@ Requirements: Herdr 0.8.0 or later, macOS or Linux, and permission to run this u
 herdr plugin install carellano/herdr-dev-servers
 ```
 
-For the initial version, pin the install explicitly:
+For the current version, pin the install explicitly:
 
 ```sh
-herdr plugin install carellano/herdr-dev-servers --ref v0.1.0
+herdr plugin install carellano/herdr-dev-servers --ref v0.1.1
 ```
 
-The installer first downloads the matching verified release archive. If that archive is unavailable, it builds locally only when Go 1.24.0 or newer is available. Herdr does not install Go for plugins. This repository is not listed in the marketplace and has no published release until its GitHub repository is made public, receives the `herdr-plugin` topic, and a maintainer publishes a release.
+The installer first downloads the matching verified release archive. If that archive is unavailable, it builds locally only when Go 1.24.0 or newer is available. Herdr does not install Go for plugins. No release currently exists. Marketplace indexing requires a non-archived public GitHub repository with the `herdr-plugin` topic, a valid manifest, and time for the marketplace refresh.
 
 ## Use
 
@@ -116,7 +116,7 @@ Set `HERDR_DEV_SERVERS_FORCE_BUILD=1` to make the installer build locally. It is
 Updates are reinstalls; install the desired ref again after reviewing its trust preview:
 
 ```sh
-herdr plugin install carellano/herdr-dev-servers --ref v0.1.0
+herdr plugin install carellano/herdr-dev-servers --ref v0.1.1
 herdr plugin uninstall carellano.dev-servers
 ```
 
@@ -124,7 +124,7 @@ Use `herdr plugin unlink carellano.dev-servers` for a linked checkout instead of
 
 ## Releases
 
-Manifest versions and release tags move together: manifest `0.1.0` is released as tag `v0.1.0`. GoReleaser creates verified `darwin` and `linux` archives plus `checksums.txt`; the installer consumes that contract. Changes are recorded in [CHANGELOG.md](CHANGELOG.md). Releases are never version-bumped or created automatically by this project.
+Manifest versions and release tags move together: manifest `0.1.1` is released as tag `v0.1.1`. GoReleaser creates verified `darwin` and `linux` archives plus `checksums.txt`; the installer consumes that contract. Changes are recorded in [CHANGELOG.md](CHANGELOG.md). Releases are never version-bumped or created automatically by this project.
 
 ## Contributing
 
