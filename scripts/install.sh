@@ -11,7 +11,7 @@ usage() {
 
 [ "$#" -eq 1 ] || usage
 version=$1
-[ "$version" = '0.1.0' ] || usage
+[ "$version" = '0.1.1' ] || usage
 
 temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/herdr-dev-servers.XXXXXX")
 cleanup() {

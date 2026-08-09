@@ -1,12 +1,12 @@
 id = "carellano.dev-servers"
 name = "Herdr Dev Servers"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.8.0"
 description = "Discover and safely inspect listening development servers."
 platforms = ["linux", "macos"]
 
 [[build]]
-command = ["sh", "./scripts/install.sh", "0.1.0"]
+command = ["sh", "./scripts/install.sh", "0.1.1"]
 
 [[startup]]
 command = ["./herdr-dev-servers", "ensure-watch"]
