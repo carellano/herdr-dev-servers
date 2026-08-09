@@ -6,7 +6,7 @@ description = "Discover and safely inspect listening development servers."
 platforms = ["linux", "macos"]
 
 [[build]]
-command = ["go", "build", "-o", "./herdr-dev-servers", "./cmd/herdr-dev-servers"]
+command = ["sh", "./scripts/install.sh", "0.1.0"]
 
 [[startup]]
 command = ["./herdr-dev-servers", "ensure-watch"]

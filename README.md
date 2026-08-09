@@ -1,65 +1,131 @@
-# Herdr Dev Servers Plugin
+# Herdr Dev Servers
 
-`herdr-dev-servers` discovers listening development servers and presents them through a daemon-owned, evidence-backed model for Herdr 0.8+ (protocol 19). It supports macOS and Linux; it does not require persistent plugin registration to build, validate, or run the CLI.
+Herdr Dev Servers discovers local listening development servers and presents them in a safe, evidence-backed Herdr popup. It keeps discovery in a plugin-owned daemon so the CLI and TUI see one current view.
 
-## Quick path
+## Install
 
-1. Build the binary: `go build ./cmd/herdr-dev-servers`.
-2. When installed or linked through Herdr, startup and `pane.created` hooks automatically keep the daemon available; the daemon also reconciles independently every configured scan interval (five seconds by default).
-3. Use `herdr-dev-servers list`, `herdr-dev-servers inspect <port>`, `herdr-dev-servers doctor`, or `herdr-dev-servers tui` in another terminal.
-
-The daemon owns current development-server revisions. CLI and TUI clients only query that local authority.
-
-## Install and manifest use
-
-Requirements: Go 1.24+, Herdr 0.8+ / protocol 19, and macOS or Linux. The manifest is [`herdr-plugin.toml`](herdr-plugin.toml); it builds `./herdr-dev-servers`, starts it through one-shot startup and pane-created hooks, and declares relative action and pane commands. No LaunchAgent or systemd unit is required.
-
-For local validation, keep the manifest in this checkout and invoke the binary directly. Do **not** copy it into a user or system plugin directory unless the host's installation process has been explicitly approved. This project never persistently registers itself.
+Requirements: Herdr 0.8.0 or later, macOS or Linux, and permission to run this unsandboxed plugin. Marketplace installs show an interactive trust preview: review it before accepting because plugins run with your user permissions.
 
 ```sh
-go test ./...
-go run ./cmd/herdr-dev-servers help
-go run ./cmd/herdr-dev-servers doctor
+herdr plugin install carellano/herdr-dev-servers
 ```
 
-## Commands
+For the initial version, pin the install explicitly:
 
-| Command | Purpose |
-|---|---|
-| `herdr-dev-servers daemon` | Starts the local authority, reconciles Herdr and listener observations, and publishes bounded workspace `$dev_servers` metadata as compact `:port` entries. |
-| `herdr-dev-servers ensure-watch` | Checks the local IPC authority and, when unavailable, starts `daemon` and waits briefly for readiness. Herdr invokes this one-shot command automatically. |
-| `herdr-dev-servers list [--json]` | Lists the latest daemon snapshot, including external listeners for diagnostics. |
-| `herdr-dev-servers open` | Opens the configured `dev-servers` popup through Herdr. The visible `carellano.dev-servers.open` workspace action (bindable to `prefix+a`) invokes it. |
-| `herdr-dev-servers inspect <port>` | Shows evidence for the development server that owns a listed port. |
-| `herdr-dev-servers doctor` | Reports local daemon availability and Herdr socket reachability only; it does not check API compatibility. |
-| `herdr-dev-servers tui` | Opens the interactive client against the existing daemon. |
-| `herdr-dev-servers help` | Prints command usage. |
+```sh
+herdr plugin install carellano/herdr-dev-servers --ref v0.1.0
+```
 
-Set `HERDR_SOCKET_PATH` only when connecting the daemon to an isolated or alternate Herdr socket. Direct CLI commands use the same plugin state as Herdr: `$XDG_STATE_HOME/herdr/plugins/carellano.dev-servers`, or `$HOME/.local/state/herdr/plugins/carellano.dev-servers` when `XDG_STATE_HOME` is unset. Set `HERDR_PLUGIN_STATE_DIR` only to override that base exactly, such as for isolated tests.
+The installer first downloads the matching verified release archive. If that archive is unavailable, it builds locally only when Go 1.24.0 or newer is available. Herdr does not install Go for plugins. This repository is not listed in the marketplace and has no published release until its GitHub repository is made public, receives the `herdr-plugin` topic, and a maintainer publishes a release.
+
+## Use
+
+Open the popup from Herdr with the plugin action, or run the command directly:
+
+```sh
+herdr-dev-servers open
+herdr-dev-servers list
+herdr-dev-servers inspect 3000
+herdr-dev-servers doctor
+```
+
+Bind the workspace action in your Herdr configuration, for example:
+
+```toml
+key = "prefix+a"
+action = "carellano.dev-servers.open"
+```
+
+The popup is also available through the `carellano.dev-servers.open` workspace action. The daemon is started by the plugin startup and `pane.created` hooks as needed.
 
 ## Configuration
 
-`config.toml` supports only these active keys: `scan_interval_seconds`, `ignored_ports`, `opener`, and `clipboard`. Ignored listener ports are excluded before correlation and never reach the daemon snapshot, CLI, or TUI. The TUI hides external listeners; `list` and `list --json` retain them for diagnostics.
+Find the plugin-owned configuration directory with:
 
-## Action safety
+```sh
+herdr plugin config-dir carellano.dev-servers
+```
 
-Actions are daemon-validated and resolve against the latest revision. Open and copy use fixed arguments; unsafe URLs, credentials, control bytes, and unavailable tools are refused. Focus reports either exact pane success, an explicit workspace/tab fallback warning, or unavailable.
+Create or edit `config.toml` there. These are the active keys:
 
-TERM and force-kill are unavailable without high-confidence, owned process evidence and explicit confirmation. Before signaling, the daemon revalidates PID, start time, identity, and that the listener itself leads its process group; a changed, missing, or shared-group process receives no signal. Force-kill additionally requires a bounded grace expiry and a second confirmation/revalidation.
+| Key | Default | Meaning |
+|---|---|---|
+| `scan_interval_seconds` | `5` | Reconciliation interval, from 1 to 3600 seconds. |
+| `ignored_ports` | `[]` | Unique TCP ports to exclude from discovery. |
+| `opener` | `"system"` | Set to `"disabled"` to disable URL opening. |
+| `clipboard` | `"system"` | Set to `"disabled"` to disable copying. |
+
+`HERDR_SOCKET_PATH` selects an alternate Herdr socket. `HERDR_PLUGIN_STATE_DIR` is useful for isolated tests; both the daemon and client must use the same value.
+
+## Local Development
+
+Link the checkout for development instead of installing a release:
+
+```sh
+herdr plugin link .
+go test ./...
+go run ./cmd/herdr-dev-servers help
+```
+
+Unlink it when finished:
+
+```sh
+herdr plugin unlink carellano.dev-servers
+```
+
+Use a separate state directory for live tests. Do not start, stop, relink, or otherwise disturb a daemon you did not start.
+
+## Safety
+
+Open and copy actions use fixed command arguments and reject unsafe URLs, credentials, control bytes, and unavailable tools. Focus reports an exact result, a workspace/tab fallback warning, or unavailability.
+
+TERM and force-kill require high-confidence, owned process evidence and explicit confirmation. Before signaling, the daemon revalidates PID, start time, identity, and process-group ownership. Force-kill requires a separate confirmation after the TERM grace period. No action guesses at ambiguous or stale evidence.
 
 ## Troubleshooting
 
-| Symptom | Check |
+| Symptom | Command or check |
 |---|---|
-| `doctor` reports Herdr unavailable | Start a compatible Herdr server or point `HERDR_SOCKET_PATH` at an isolated server socket. |
-| `list` cannot reach the daemon | Run `herdr-dev-servers ensure-watch` or start `herdr-dev-servers daemon` for direct local validation; direct commands and Herdr share the plugin-state default, while an explicit `HERDR_PLUGIN_STATE_DIR` must match in both processes. |
-| No development server is listed | Confirm a supported TCP listener and current Herdr pane/process evidence; unavailable or ambiguous evidence is shown as such rather than guessed. |
-| `$dev_servers` is absent or unchanged | Metadata is bounded, stable-sorted, and suppressed when its digest has not changed; inspect daemon/Herdr diagnostics first. |
+| Herdr is unavailable | `herdr-dev-servers doctor` and verify the Herdr socket. |
+| The daemon is unavailable | `herdr-dev-servers ensure-watch`, then `herdr-dev-servers list`. |
+| No server is listed | Confirm a supported TCP listener and current Herdr pane/process evidence. |
+| Need diagnostics | `herdr-dev-servers list --json` or `herdr-dev-servers inspect <port>`. |
 
-## Clean rollback and uninstall
+## Architecture
 
-1. Stop only the `herdr-dev-servers daemon` process you started.
-2. Remove the local binary and any temporary checkout or approved manifest copy.
-3. Remove only the plugin state directory selected by `HERDR_PLUGIN_STATE_DIR`, or the plugin-owned default state directory if it was created for this plugin.
+The daemon owns listener discovery, correlation, revisions, and the plugin-local JSONL IPC endpoint. The CLI and Bubble Tea popup are clients of that endpoint. Correlation combines listener, process, and Herdr pane evidence; only high-confidence ownership can enable destructive process actions.
 
-The daemon cleans up only its nonce-matching socket, lock, and cache entries. Rollback does not terminate discovered applications, modify unrelated Herdr metadata, or remove host-managed plugin registrations.
+Supported production platforms are macOS and Linux on `amd64` and `arm64`. Other platforms can compile the CLI where dependencies permit, but process signaling is intentionally unavailable.
+
+## Build And Test
+
+```sh
+gofmt -w .
+go mod tidy
+go vet ./...
+go test ./...
+go test -race ./...
+go build ./cmd/herdr-dev-servers
+sh -n scripts/install.sh scripts/check-release.sh
+scripts/check-release.sh
+```
+
+Set `HERDR_DEV_SERVERS_FORCE_BUILD=1` to make the installer build locally. It is intended for CI and isolated local tests.
+
+## Updating And Removing
+
+Updates are reinstalls; install the desired ref again after reviewing its trust preview:
+
+```sh
+herdr plugin install carellano/herdr-dev-servers --ref v0.1.0
+herdr plugin uninstall carellano.dev-servers
+```
+
+Use `herdr plugin unlink carellano.dev-servers` for a linked checkout instead of uninstalling it.
+
+## Releases
+
+Manifest versions and release tags move together: manifest `0.1.0` is released as tag `v0.1.0`. GoReleaser creates verified `darwin` and `linux` archives plus `checksums.txt`; the installer consumes that contract. Changes are recorded in [CHANGELOG.md](CHANGELOG.md). Releases are never version-bumped or created automatically by this project.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports belong in [SECURITY.md](SECURITY.md).
