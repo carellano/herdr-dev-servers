@@ -39,7 +39,12 @@ func (ipcProcessInspector) Wait(context.Context, model.ProcessIdentity) error {
 
 type ipcSignaler struct{ calls int }
 
-func (s *ipcSignaler) SignalPGID(int, actions.Signal) error {
+func (s *ipcSignaler) SignalPID(int, actions.Signal) error {
+	s.calls++
+	return nil
+}
+
+func (s *ipcSignaler) SignalProcessGroup(int, actions.Signal) error {
 	s.calls++
 	return nil
 }

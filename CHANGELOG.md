@@ -6,6 +6,14 @@ All notable changes to Herdr Dev Servers are documented here.
 
 No unreleased changes.
 
+## 0.1.2
+
+Release contents for `v0.1.2`.
+
+- Send TERM and eligible force KILL to the exact verified listener PID when it is a child of an npm-managed process group, while retaining process-group signals for verified group leaders.
+- Make the popup distinguish navigation association from the separate, stricter safety evidence required before TERM or force KILL is available.
+- Remove the internal snapshot revision from the visible popup header while retaining revision-based action safety.
+
 ## 0.1.1
 
 Release automation correction for the next publication attempt. This entry does not indicate that a GitHub release has been published.

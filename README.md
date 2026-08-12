@@ -13,10 +13,10 @@ herdr plugin install carellano/herdr-dev-servers
 For the current version, pin the install explicitly:
 
 ```sh
-herdr plugin install carellano/herdr-dev-servers --ref v0.1.1
+herdr plugin install carellano/herdr-dev-servers --ref v0.1.2
 ```
 
-The installer first downloads the matching verified release archive. If that archive is unavailable, it builds locally only when Go 1.24.0 or newer is available. Herdr does not install Go for plugins. No release currently exists. Marketplace indexing requires a non-archived public GitHub repository with the `herdr-plugin` topic, a valid manifest, and time for the marketplace refresh.
+The installer first downloads the matching verified release archive. If that archive is unavailable, it builds locally only when Go 1.24.0 or newer is available. Herdr does not install Go for plugins. The `v0.1.1` release exists; `v0.1.2` is being prepared. Marketplace indexing requires a non-archived public GitHub repository with the `herdr-plugin` topic, a valid manifest, and time for the marketplace refresh.
 
 ## Use
 
@@ -79,7 +79,7 @@ Use a separate state directory for live tests. Do not start, stop, relink, or ot
 
 Open and copy actions use fixed command arguments and reject unsafe URLs, credentials, control bytes, and unavailable tools. Focus reports an exact result, a workspace/tab fallback warning, or unavailability.
 
-TERM and force-kill require high-confidence, owned process evidence and explicit confirmation. Before signaling, the daemon revalidates PID, start time, identity, and process-group ownership. Force-kill requires a separate confirmation after the TERM grace period. No action guesses at ambiguous or stale evidence.
+The UI distinguishes navigation association from the stricter evidence required for process signaling. TERM and force-kill require high-confidence, owned process evidence and explicit confirmation. Before signaling, the daemon revalidates PID, start time, identity, and process-group ownership; verified listener children receive exact-PID TERM or KILL, while group leaders receive process-group signals. Force-kill requires a separate confirmation after the TERM grace period. No action guesses at ambiguous or stale evidence.
 
 ## Troubleshooting
 
@@ -116,7 +116,7 @@ Set `HERDR_DEV_SERVERS_FORCE_BUILD=1` to make the installer build locally. It is
 Updates are reinstalls; install the desired ref again after reviewing its trust preview:
 
 ```sh
-herdr plugin install carellano/herdr-dev-servers --ref v0.1.1
+herdr plugin install carellano/herdr-dev-servers --ref v0.1.2
 herdr plugin uninstall carellano.dev-servers
 ```
 
@@ -124,7 +124,7 @@ Use `herdr plugin unlink carellano.dev-servers` for a linked checkout instead of
 
 ## Releases
 
-Manifest versions and release tags move together: manifest `0.1.1` is released as tag `v0.1.1`. GoReleaser creates verified `darwin` and `linux` archives plus `checksums.txt`; the installer consumes that contract. Changes are recorded in [CHANGELOG.md](CHANGELOG.md). Releases are never version-bumped or created automatically by this project.
+Manifest versions and release tags move together: manifest `0.1.2` is released as tag `v0.1.2`. GoReleaser creates verified `darwin` and `linux` archives plus `checksums.txt`; the installer consumes that contract. Changes are recorded in [CHANGELOG.md](CHANGELOG.md). Releases are never version-bumped or created automatically by this project.
 
 ## Contributing
 
