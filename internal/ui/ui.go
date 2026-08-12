@@ -300,7 +300,7 @@ func (m Model) View() string {
 	}
 	width := max(1, m.width)
 	apps := m.apps()
-	title := truncate(fmt.Sprintf("Herdr Dev Servers | rev %d | development servers", m.snapshot.Revision), width)
+	title := truncate("Herdr Dev Servers | development servers", width)
 	title = lipgloss.NewStyle().Bold(true).Render(title)
 
 	listWidth, detailWidth := width, width
@@ -365,7 +365,8 @@ func (m Model) renderDetail(apps []model.Application, width int) string {
 		truncate(appName(app), width),
 		truncate("Endpoints: "+endpointSummary(app), width),
 		truncate("Location: "+locationSummary(association), width),
-		truncate("Association: "+confidenceSummary(association.Confidence, association.Stale), width),
+		truncate("Association: "+confidenceSummary(association.Confidence, association.Stale)+" (navigation)", width),
+		truncate(signalSafetySummary(app), width),
 	}
 	if app.Identity.PID > 0 {
 		lines = append(lines, truncate(fmt.Sprintf("Process: PID %d", app.Identity.PID), width))
@@ -437,6 +438,20 @@ func confidenceSummary(confidence model.Confidence, stale bool) string {
 		return value + " (stale)"
 	}
 	return value
+}
+
+func signalSafetySummary(app model.Application) string {
+	identity := app.Identity
+	switch {
+	case app.External || app.Association.Stale || app.Association.Confidence != model.ConfidenceHigh:
+		return "TERM/KILL: unavailable; exact current association is required"
+	case identity.PID <= 0 || identity.PGID <= 0 || identity.StartTime == "" || identity.Key == "":
+		return "TERM/KILL: unavailable; process-incarnation evidence is incomplete"
+	case identity.PID != identity.PGID:
+		return "TERM/KILL: listener PID only; require final process revalidation"
+	default:
+		return "TERM/KILL: require final process revalidation"
+	}
 }
 
 func wrapText(text string, width int) string {

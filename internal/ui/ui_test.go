@@ -28,6 +28,9 @@ func TestResponsiveViewFiltersExternalApplicationsAndIgnoresA(t *testing.T) {
 		if !strings.Contains(view, "node") || !strings.Contains(view, "Keys:") || !strings.Contains(normalizedView, "K force kill (after TERM)") {
 			t.Fatalf("width %d did not retain commands and owned app: %q", width, view)
 		}
+		if strings.Contains(view, "| rev ") {
+			t.Fatalf("width %d exposed the internal snapshot revision: %q", width, view)
+		}
 		if width >= 80 && !strings.Contains(view, "Association:") {
 			t.Fatalf("width %d did not render detail pane: %q", width, view)
 		}
@@ -234,6 +237,36 @@ func TestReadableApplicationRendering(t *testing.T) {
 	}
 	if !strings.Contains(view, "Dev Servers (1)") || !strings.Contains(view, "Selected development server") {
 		t.Fatalf("wide view did not render stable columns: %q", view)
+	}
+}
+
+func TestExactPaneAssociationExplainsSeparateSignalSafety(t *testing.T) {
+	app := destructiveApp("server", "started")
+	app.Association = model.Association{WorkspaceLabel: "Project", TabLabel: "Server", PaneLabel: "API", Confidence: model.ConfidenceHigh}
+	app.Identity.PGID = 99
+	called := false
+	m := New(model.Snapshot{Revision: 1, Applications: []model.Application{app}}, func(_ context.Context, key string, got model.Application, _ uint64, confirmed bool) (model.ActionResult, model.Snapshot, error) {
+		called = true
+		if key != "t" || !confirmed || got.ID != app.ID || got.Identity != app.Identity {
+			t.Fatalf("TERM request = key %q confirmed %t app %#v", key, confirmed, got)
+		}
+		return model.ActionResult{Outcome: "term-sent"}, model.Snapshot{Revision: 1, Applications: []model.Application{app}}, nil
+	})
+	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 120, Height: 24})
+	for _, want := range []string{
+		"Association: High confidence (navigation)",
+		"TERM/KILL: listener PID only; require final process revalidation",
+	} {
+		if !strings.Contains(m.View(), want) {
+			t.Fatalf("view missing %q: %q", want, m.View())
+		}
+	}
+
+	m, _ = updateModel(m, key("t"))
+	m, command := updateModel(m, key("t"))
+	m, _ = updateModel(m, command())
+	if !called || !strings.Contains(m.View(), "Status: term-sent") {
+		t.Fatalf("TERM result did not explain separate safety gate: %q", m.View())
 	}
 }
 

@@ -12,9 +12,9 @@ require_line() {
 
 require_line go.mod 'module github.com/carellano/herdr-dev-servers'
 version=$(awk -F '"' '$1 == "version = " { print $2; exit }' herdr-plugin.toml)
-[ "$version" = '0.1.1' ] || fail 'manifest version must be 0.1.1'
+[ "$version" = '0.1.2' ] || fail 'manifest version must be 0.1.2'
 require_line herdr-plugin.toml 'id = "carellano.dev-servers"'
-require_line herdr-plugin.toml 'command = ["sh", "./scripts/install.sh", "0.1.1"]'
+require_line herdr-plugin.toml 'command = ["sh", "./scripts/install.sh", "0.1.2"]'
 require_line herdr-plugin.toml 'id = "open"'
 require_line herdr-plugin.toml 'id = "dev-servers"'
 grep -Fq "## $version" CHANGELOG.md || fail "missing $version changelog entry"

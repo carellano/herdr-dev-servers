@@ -17,6 +17,7 @@ func TestTerminateRevalidatesOwnedProcessGroupBeforeSignaling(t *testing.T) {
 		inspected  model.ProcessIdentity
 		inspectErr error
 		confirmed  bool
+		warning    string
 	}{
 		{name: "PID reused", app: testApp(identity), inspected: model.ProcessIdentity{PID: identity.PID, StartTime: "new", PGID: identity.PGID, Key: identity.Key}, confirmed: true},
 		{name: "PGID changed", app: testApp(identity), inspected: model.ProcessIdentity{PID: identity.PID, StartTime: identity.StartTime, PGID: 99, Key: identity.Key}, confirmed: true},
@@ -25,7 +26,6 @@ func TestTerminateRevalidatesOwnedProcessGroupBeforeSignaling(t *testing.T) {
 		{name: "external identity", app: model.Application{Identity: identity, External: true, Association: model.Association{Confidence: model.ConfidenceHigh}}, inspected: identity, confirmed: true},
 		{name: "stale identity", app: model.Application{Identity: identity, Association: model.Association{Confidence: model.ConfidenceHigh, Stale: true}}, inspected: identity, confirmed: true},
 		{name: "ambiguous identity", app: model.Application{Identity: identity, Association: model.Association{Confidence: model.ConfidencePartial}}, inspected: identity, confirmed: true},
-		{name: "listener is not process group leader", app: testApp(model.ProcessIdentity{PID: identity.PID, StartTime: identity.StartTime, PGID: 99, Key: identity.Key}), inspected: identity, confirmed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			signaler := &fakeSignaler{}
@@ -34,11 +34,14 @@ func TestTerminateRevalidatesOwnedProcessGroupBeforeSignaling(t *testing.T) {
 			if result.Outcome == OutcomeTermSent || len(signaler.calls) != 0 {
 				t.Fatalf("Terminate() = %#v, signals = %#v; want refusal without signal", result, signaler.calls)
 			}
+			if tc.warning != "" && result.Warning != tc.warning {
+				t.Fatalf("Terminate() warning = %q, want %q", result.Warning, tc.warning)
+			}
 		})
 	}
 }
 
-func TestTerminateSignalsValidatedProcessGroupAndLeavesForceSeparate(t *testing.T) {
+func TestTerminateSignalsValidatedLeaderProcessGroupAndLeavesForceSeparate(t *testing.T) {
 	identity := testIdentity()
 	signaler := &fakeSignaler{}
 	service := Service{Processes: fakeInspector{identity: identity, waitErr: context.DeadlineExceeded}, Signaler: signaler, Grace: time.Millisecond}
@@ -46,8 +49,27 @@ func TestTerminateSignalsValidatedProcessGroupAndLeavesForceSeparate(t *testing.
 	if result.Outcome != OutcomeTermSent || !result.ForceEligible {
 		t.Fatalf("Terminate() = %#v, want TERM result with explicit force eligibility", result)
 	}
-	if got, want := signaler.calls, []signalCall{{PGID: identity.PGID, Signal: SignalTERM}}; !sameCalls(got, want) {
+	if result := service.ForceKill(context.Background(), testApp(identity), true); result.Outcome != OutcomeKillSent {
+		t.Fatalf("ForceKill() = %#v", result)
+	}
+	if got, want := signaler.calls, []signalCall{{ProcessGroup: identity.PGID, Signal: SignalTERM}, {ProcessGroup: identity.PGID, Signal: SignalKILL}}; !sameCalls(got, want) {
 		t.Fatalf("signals = %#v, want %#v", got, want)
+	}
+}
+
+func TestChildListenerSignalsExactPIDWithoutTargetingSharedGroup(t *testing.T) {
+	identity := testIdentity()
+	identity.PGID = 7
+	signaler := &fakeSignaler{}
+	service := Service{Processes: fakeInspector{identity: identity, waitErr: context.DeadlineExceeded}, Signaler: signaler, Grace: time.Millisecond}
+	if result := service.Terminate(context.Background(), testApp(identity), true); result.Outcome != OutcomeTermSent || !result.ForceEligible {
+		t.Fatalf("TERM result=%#v", result)
+	}
+	if result := service.ForceKill(context.Background(), testApp(identity), true); result.Outcome != OutcomeKillSent {
+		t.Fatalf("KILL result=%#v", result)
+	}
+	if got, want := signaler.calls, []signalCall{{PID: identity.PID, Signal: SignalTERM}, {PID: identity.PID, Signal: SignalKILL}}; !sameCalls(got, want) {
+		t.Fatalf("signals=%#v, want %#v", got, want)
 	}
 }
 
@@ -82,14 +104,20 @@ func (f fakeInspector) Inspect(context.Context, int) (model.ProcessIdentity, err
 func (f fakeInspector) Wait(context.Context, model.ProcessIdentity) error { return f.waitErr }
 
 type signalCall struct {
-	PGID   int
-	Signal Signal
+	PID          int
+	ProcessGroup int
+	Signal       Signal
 }
 
 type fakeSignaler struct{ calls []signalCall }
 
-func (f *fakeSignaler) SignalPGID(pgid int, signal Signal) error {
-	f.calls = append(f.calls, signalCall{PGID: pgid, Signal: signal})
+func (f *fakeSignaler) SignalPID(pid int, signal Signal) error {
+	f.calls = append(f.calls, signalCall{PID: pid, Signal: signal})
+	return nil
+}
+
+func (f *fakeSignaler) SignalProcessGroup(pgid int, signal Signal) error {
+	f.calls = append(f.calls, signalCall{ProcessGroup: pgid, Signal: signal})
 	return nil
 }
 

@@ -14,10 +14,17 @@ type bridgeSignaler struct {
 	calls []signalCall
 }
 
-func (s *bridgeSignaler) SignalPGID(pgid int, signal Signal) error {
+func (s *bridgeSignaler) SignalPID(pid int, signal Signal) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.calls = append(s.calls, signalCall{PGID: pgid, Signal: signal})
+	s.calls = append(s.calls, signalCall{PID: pid, Signal: signal})
+	return nil
+}
+
+func (s *bridgeSignaler) SignalProcessGroup(pgid int, signal Signal) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, signalCall{ProcessGroup: pgid, Signal: signal})
 	return nil
 }
 

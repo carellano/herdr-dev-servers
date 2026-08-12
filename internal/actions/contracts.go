@@ -47,9 +47,10 @@ type ProcessInspector interface {
 	Wait(context.Context, model.ProcessIdentity) error
 }
 
-// Signaler targets process groups, never an inferred child PID.
+// Signaler targets either an exact validated process or its owned process group.
 type Signaler interface {
-	SignalPGID(pgid int, signal Signal) error
+	SignalPID(pid int, signal Signal) error
+	SignalProcessGroup(pgid int, signal Signal) error
 }
 
 // Signal is intentionally narrow so tests never signal host processes.

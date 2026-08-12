@@ -8,5 +8,5 @@ import (
 )
 
 func productionProcessActions(adapter.Factory) (actions.ProcessInspector, actions.Signaler) {
-	return nil, nil
+	return nil, actions.UnsupportedSignaler{}
 }
